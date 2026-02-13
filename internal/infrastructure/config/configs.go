@@ -74,10 +74,11 @@ type DBConfig struct {
 }
 
 type OtelConfig struct {
-	CollectorEndpoint string `json:"collector_endpoint" yaml:"collector_endpoint" toml:"collector_endpoint"`
-	TracerName        string `json:"tracer_name" yaml:"tracer_name" toml:"tracer_name"`
-	ServiceName       string `json:"service_name" yaml:"service_name" toml:"service_name"`
-	GrafanaURL        string `json:"grafana_url" yaml:"grafana_url" toml:"grafana_url"`
+	CollectorEndpoint  string `json:"collector_endpoint" yaml:"collector_endpoint" toml:"collector_endpoint"`
+	TracerName         string `json:"tracer_name" yaml:"tracer_name" toml:"tracer_name"`
+	ServiceName        string `json:"service_name" yaml:"service_name" toml:"service_name"`
+	GrafanaURL         string `json:"grafana_url" yaml:"grafana_url" toml:"grafana_url"`
+	JaegerDataSourceID string `json:"jaeger_data_source_id" yaml:"jaeger_data_source_id" toml:"jaeger_data_source_id"`
 }
 
 type OpensearchConfig struct {

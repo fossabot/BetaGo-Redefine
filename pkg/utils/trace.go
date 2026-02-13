@@ -43,7 +43,7 @@ type TimeRange struct {
 
 func GenerateTraceURL(traceID string) (string, error) {
 	baseURL := config.Get().OtelConfig.GrafanaURL
-	dsUID := "1"
+	dsUID := config.Get().OtelConfig.JaegerDataSourceID
 
 	pane := PaneDetail{
 		Datasource: dsUID, Queries: []Query{
