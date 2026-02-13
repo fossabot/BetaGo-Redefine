@@ -1,0 +1,113 @@
+package neteaseapi
+
+import (
+	"context"
+	"fmt"
+	"strings"
+	"sync"
+
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/lark_dal/larkimg"
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/lark_dal/larkmsg/larktpl"
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/otel"
+	"github.com/BetaGoRobot/BetaGo-Redefine/pkg/logs"
+
+	"github.com/BetaGoRobot/go_utils/reflecting"
+	"go.uber.org/zap"
+)
+
+type musicItemTransFunc[T any] func(*T) *SearchMusicItem
+
+func MusicItemNoTrans(item *SearchMusicItem) *SearchMusicItem {
+	return item
+}
+
+func MusicItemTransAlbum(album *Album) *SearchMusicItem {
+	return &SearchMusicItem{
+		ID:         album.IDStr,
+		Name:       "[" + album.Type + "] " + album.Name,
+		PicURL:     album.PicURL,
+		ArtistName: album.Artist.Name,
+		ImageKey:   larkimg.UploadPicture2Lark(context.Background(), album.PicURL),
+	}
+}
+
+func BuildMusicListCard[T any](ctx context.Context, resList []*T, transFunc musicItemTransFunc[T], resourceType CommentType, keywords ...string) (content *larktpl.TemplateCardContent, err error) {
+	ctx, span := otel.T().Start(ctx, reflecting.GetCurrentFunc())
+	defer span.End()
+
+	res := make([]*SearchMusicItem, len(resList))
+	for i, item := range resList {
+		res[i] = transFunc(item)
+	}
+	lines := make([]map[string]interface{}, len(res))
+	var buttonName string
+	var buttonType string
+	switch resourceType {
+	case CommentTypeSong:
+		buttonName = "点击播放"
+		buttonType = "song"
+	case CommentTypeAlbum:
+		buttonName = "查看专辑"
+		buttonType = "album"
+	default:
+		buttonName = "点击查看"
+		buttonType = "null"
+	}
+
+	var (
+		commentChan = make(chan map[string]interface{}, len(resList))
+		wg          = &sync.WaitGroup{}
+	)
+	go func() {
+		defer close(commentChan)
+		defer wg.Wait()
+		for idx, item := range res {
+			wg.Add(1)
+			go func(item *SearchMusicItem) {
+				defer wg.Done()
+				comment, err := NetEaseGCtx.GetComment(ctx, resourceType, item.ID)
+				if err != nil {
+					logs.L().Ctx(ctx).Error("GetComment Error", zap.Error(err))
+				}
+				line := map[string]interface{}{
+					"idx":         idx,
+					"field_1":     genMusicTitle(item.Name, item.ArtistName),
+					"field_2":     map[string]any{"img_key": item.ImageKey},
+					"button_info": buttonName,
+					"element_id":  item.ID,
+					"button_val": map[string]string{
+						"type": buttonType,
+						"id":   item.ID,
+					},
+				}
+				if len(comment.Data.Comments) != 0 {
+					line["field_3"] = comment.Data.Comments[0].Content
+					if runeSlice := []rune(comment.Data.Comments[0].Content); len(runeSlice) > 50 {
+						line["field_3"] = string(runeSlice[:50]) + "..."
+					}
+					line["comment_time"] = comment.Data.Comments[0].TimeStr
+				}
+				if resourceType == CommentTypeSong && item.SongURL == "" { // 无效歌曲
+					line["button_info"] = "歌曲无效"
+				}
+				commentChan <- line
+			}(item)
+		}
+	}()
+	for line := range commentChan {
+		idx := line["idx"].(int)
+		lines[idx] = line
+	}
+	content = larktpl.NewCardContent(
+		ctx,
+		larktpl.AlbumListTemplate,
+	).
+		AddVariable("object_list_1", lines).
+		AddVariable("query", fmt.Sprintf("[%s]", strings.Join(keywords, " ")))
+
+	return
+}
+
+func genMusicTitle(title, artist string) string {
+	return fmt.Sprintf("**%s**\n**%s**", title, artist)
+}

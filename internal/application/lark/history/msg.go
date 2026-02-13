@@ -7,11 +7,11 @@ import (
 	"strings"
 
 	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/config"
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/lark_dal/larkmsg/larkcontent"
 	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/opensearch"
 	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/otel"
 	"github.com/BetaGoRobot/BetaGo-Redefine/internal/xmodel"
 	"github.com/BetaGoRobot/BetaGo-Redefine/pkg/utils"
-	"github.com/BetaGoRobot/BetaGo/utility/larkutils/larkmsgutils"
 	commonutils "github.com/BetaGoRobot/go_utils/common_utils"
 	"github.com/BetaGoRobot/go_utils/reflecting"
 	"github.com/bytedance/sonic"
@@ -305,10 +305,10 @@ func FilterMessage(hits []opensearchapi.SearchHit) (msgList []*OpensearchMsgLog)
 			continue
 		}
 		mentions := make([]*larkim.Mention, 0)
-		utils.UnmarshallStrPre(res.Mentions, &mentions)
+		utils.UnmarshalStrPre(res.Mentions, &mentions)
 
 		tmpList := make([]string, 0)
-		for msgItem := range larkmsgutils.
+		for msgItem := range larkcontent.
 			GetContentItemsSeq(
 				&larkim.EventMessage{
 					Content:     &res.RawMessage,

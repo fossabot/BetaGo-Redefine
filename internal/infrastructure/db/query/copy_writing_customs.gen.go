@@ -27,7 +27,7 @@ func newCopyWritingCustom(db *gorm.DB, opts ...gen.DOOption) copyWritingCustom {
 	_copyWritingCustom.ALL = field.NewAsterisk(tableName)
 	_copyWritingCustom.Endpoint = field.NewString(tableName, "endpoint")
 	_copyWritingCustom.GuildID = field.NewString(tableName, "guild_id")
-	_copyWritingCustom.Content = field.NewString(tableName, "content")
+	_copyWritingCustom.Content = field.NewField(tableName, "content")
 
 	_copyWritingCustom.fillFieldMap()
 
@@ -40,7 +40,7 @@ type copyWritingCustom struct {
 	ALL      field.Asterisk
 	Endpoint field.String
 	GuildID  field.String
-	Content  field.String
+	Content  field.Field
 
 	fieldMap map[string]field.Expr
 }
@@ -59,7 +59,7 @@ func (c *copyWritingCustom) updateTableName(table string) *copyWritingCustom {
 	c.ALL = field.NewAsterisk(table)
 	c.Endpoint = field.NewString(table, "endpoint")
 	c.GuildID = field.NewString(table, "guild_id")
-	c.Content = field.NewString(table, "content")
+	c.Content = field.NewField(table, "content")
 
 	c.fillFieldMap()
 

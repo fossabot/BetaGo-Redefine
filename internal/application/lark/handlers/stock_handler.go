@@ -6,26 +6,25 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/BetaGoRobot/BetaGo/dal/aktool"
-	commandBase "github.com/BetaGoRobot/BetaGo/handler/command_base"
-	handlerbase "github.com/BetaGoRobot/BetaGo/handler/handler_base"
-	"github.com/BetaGoRobot/BetaGo/utility"
-	"github.com/BetaGoRobot/BetaGo/utility/ark/tools"
-	"github.com/BetaGoRobot/BetaGo/utility/larkutils"
-	"github.com/BetaGoRobot/BetaGo/utility/larkutils/cardutil"
-	"github.com/BetaGoRobot/BetaGo/utility/larkutils/templates"
-	"github.com/BetaGoRobot/BetaGo/utility/logs"
-	"github.com/BetaGoRobot/BetaGo/utility/otel"
-	"github.com/BetaGoRobot/BetaGo/utility/vadvisor"
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/aktool"
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/lark_dal/larkmsg"
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/lark_dal/larkmsg/larkcard"
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/lark_dal/larkmsg/larktpl"
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/vadvisor"
+
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/otel"
+	"github.com/BetaGoRobot/BetaGo-Redefine/pkg/logs"
+	"github.com/BetaGoRobot/BetaGo-Redefine/pkg/utils"
+	"github.com/BetaGoRobot/BetaGo-Redefine/pkg/xcommand"
+	"github.com/BetaGoRobot/BetaGo-Redefine/pkg/xhandler"
 	"github.com/BetaGoRobot/go_utils/reflecting"
-	"github.com/bytedance/gg/goption"
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 	"go.opentelemetry.io/otel/attribute"
 	"go.uber.org/zap"
 )
 
-func StockHandler(stockType string) commandBase.CommandFunc[*larkim.P2MessageReceiveV1] {
+func StockHandler(stockType string) xcommand.CommandFunc[*larkim.P2MessageReceiveV1] {
 	switch stockType {
 	case "gold":
 		return GoldHandler
@@ -35,7 +34,7 @@ func StockHandler(stockType string) commandBase.CommandFunc[*larkim.P2MessageRec
 	return nil
 }
 
-func GoldHandler(ctx context.Context, data *larkim.P2MessageReceiveV1, metaData *handlerbase.BaseMetaData, args ...string) (err error) {
+func GoldHandler(ctx context.Context, data *larkim.P2MessageReceiveV1, metaData *xhandler.BaseMetaData, args ...string) (err error) {
 	ctx, span := otel.T().Start(ctx, reflecting.GetCurrentFunc())
 	span.SetAttributes(attribute.Key("event").String(larkcore.Prettify(data)))
 	defer span.End()
@@ -44,7 +43,7 @@ func GoldHandler(ctx context.Context, data *larkim.P2MessageReceiveV1, metaData 
 	argMap, _ := parseArgs(args...)
 
 	var (
-		cardContent *templates.TemplateCardContent
+		cardContent *larktpl.TemplateCardContent
 		days        int
 		hoursInt    int
 		defaultDays = 30
@@ -108,11 +107,11 @@ func GoldHandler(ctx context.Context, data *larkim.P2MessageReceiveV1, metaData 
 	}
 
 	if metaData != nil && metaData.Refresh {
-		err = larkutils.PatchCard(ctx,
+		err = larkmsg.PatchCard(ctx,
 			cardContent,
 			*data.Event.Message.MessageId)
 	} else {
-		err = larkutils.ReplyCard(ctx,
+		err = larkmsg.ReplyCard(ctx,
 			cardContent,
 			*data.Event.Message.MessageId, "", false)
 	}
@@ -120,7 +119,7 @@ func GoldHandler(ctx context.Context, data *larkim.P2MessageReceiveV1, metaData 
 	return
 }
 
-func ZhAStockHandler(ctx context.Context, data *larkim.P2MessageReceiveV1, metaData *handlerbase.BaseMetaData, args ...string) (err error) {
+func ZhAStockHandler(ctx context.Context, data *larkim.P2MessageReceiveV1, metaData *xhandler.BaseMetaData, args ...string) (err error) {
 	ctx, span := otel.T().Start(ctx, reflecting.GetCurrentFunc())
 	span.SetAttributes(attribute.Key("event").String(larkcore.Prettify(data)))
 	defer span.End()
@@ -173,7 +172,7 @@ func ZhAStockHandler(ctx context.Context, data *larkim.P2MessageReceiveV1, metaD
 	graph.AddPointSeries(
 		func(yield func(vadvisor.XYSUnit[string, float64]) bool) {
 			for _, price := range stockPrice {
-				t, err := time.ParseInLocation(time.DateTime, price.DateTime, utility.UTCPlus8Loc())
+				t, err := time.ParseInLocation(time.DateTime, price.DateTime, utils.UTC8Loc())
 				if err != nil {
 					return
 				}
@@ -181,40 +180,40 @@ func ZhAStockHandler(ctx context.Context, data *larkim.P2MessageReceiveV1, metaD
 					continue
 				}
 
-				if !yield(vadvisor.XYSUnit[string, float64]{X: t.In(utility.UTCPlus8Loc()).Format(time.DateTime), Y: utility.Must2Float(price.Open), S: "开盘"}) {
+				if !yield(vadvisor.XYSUnit[string, float64]{X: t.In(utils.UTC8Loc()).Format(time.DateTime), Y: utils.Must2Float(price.Open), S: "开盘"}) {
 					return
 				}
-				if !yield(vadvisor.XYSUnit[string, float64]{X: t.In(utility.UTCPlus8Loc()).Format(time.DateTime), Y: utility.Must2Float(price.Close), S: "收盘"}) {
+				if !yield(vadvisor.XYSUnit[string, float64]{X: t.In(utils.UTC8Loc()).Format(time.DateTime), Y: utils.Must2Float(price.Close), S: "收盘"}) {
 					return
 				}
-				if !yield(vadvisor.XYSUnit[string, float64]{X: t.In(utility.UTCPlus8Loc()).Format(time.DateTime), Y: utility.Must2Float(price.High), S: "最高"}) {
+				if !yield(vadvisor.XYSUnit[string, float64]{X: t.In(utils.UTC8Loc()).Format(time.DateTime), Y: utils.Must2Float(price.High), S: "最高"}) {
 					return
 				}
-				if !yield(vadvisor.XYSUnit[string, float64]{X: t.In(utility.UTCPlus8Loc()).Format(time.DateTime), Y: utility.Must2Float(price.Low), S: "最低"}) {
+				if !yield(vadvisor.XYSUnit[string, float64]{X: t.In(utils.UTC8Loc()).Format(time.DateTime), Y: utils.Must2Float(price.Low), S: "最低"}) {
 					return
 				}
 			}
 		},
 	)
-	cardContent := cardutil.NewCardBuildGraphHelper(graph).
+	cardContent := larkcard.NewCardBuildGraphHelper(graph).
 		SetTitle(fmt.Sprintf("沪A-[%s]%s-近<%d>天", stockCode, stockName, days)).
 		SetStartTime(st).
 		SetEndTime(et).
 		Build(ctx)
 	if metaData != nil && metaData.Refresh {
-		err = larkutils.PatchCard(ctx,
+		err = larkmsg.PatchCard(ctx,
 			cardContent,
 			*data.Event.Message.MessageId)
 	} else {
-		err = larkutils.ReplyCard(ctx,
+		err = larkmsg.ReplyCard(ctx,
 			cardContent,
 			*data.Event.Message.MessageId, "", false)
 	}
 	return
 }
 
-func GetHistoryGoldGraph(ctx context.Context, st, et time.Time) (*templates.TemplateCardContent, error) {
-	_, span := otel.BetaGoOtelTracer.Start(ctx, reflecting.GetCurrentFunc())
+func GetHistoryGoldGraph(ctx context.Context, st, et time.Time) (*larktpl.TemplateCardContent, error) {
+	_, span := otel.T().Start(ctx, reflecting.GetCurrentFunc())
 	defer span.End()
 
 	logs.L().Ctx(ctx).Info("GetHistoryGoldGraph", zap.String("st", st.Format(time.RFC3339)), zap.String("et", et.Format(time.RFC3339)))
@@ -265,7 +264,7 @@ func GetHistoryGoldGraph(ctx context.Context, st, et time.Time) (*templates.Temp
 
 			for _, price := range res {
 				dStr := time.Now().Format(time.DateOnly) + " " + price.Time
-				t, err := time.ParseInLocation(time.DateTime, dStr, utility.UTCPlus8Loc())
+				t, err := time.ParseInLocation(time.DateTime, dStr, utils.UTC8Loc())
 				if err != nil {
 					continue
 				}
@@ -285,7 +284,7 @@ func GetHistoryGoldGraph(ctx context.Context, st, et time.Time) (*templates.Temp
 			}
 		}
 	}
-	card := cardutil.NewCardBuildGraphHelper(graph).
+	card := larkcard.NewCardBuildGraphHelper(graph).
 		SetTitle("沪金所价格数据").
 		SetStartTime(st).
 		SetEndTime(et).
@@ -293,7 +292,7 @@ func GetHistoryGoldGraph(ctx context.Context, st, et time.Time) (*templates.Temp
 	return card, nil
 }
 
-func GetRealtimeGoldPriceGraph(ctx context.Context, st, et time.Time) (*templates.TemplateCardContent, error) {
+func GetRealtimeGoldPriceGraph(ctx context.Context, st, et time.Time) (*larktpl.TemplateCardContent, error) {
 	graph := vadvisor.NewMultiSeriesLineGraph[string, float64](ctx)
 	goldPrice, err := aktool.GetRealtimeGoldPrice(ctx)
 	if err != nil {
@@ -304,7 +303,7 @@ func GetRealtimeGoldPriceGraph(ctx context.Context, st, et time.Time) (*template
 			func(yield func(vadvisor.XYSUnit[string, float64]) bool) {
 				for _, price := range goldPrice {
 					dStr := time.Now().Format(time.DateOnly) + " " + price.Time
-					t, err := time.ParseInLocation(time.DateTime, dStr, utility.UTCPlus8Loc())
+					t, err := time.ParseInLocation(time.DateTime, dStr, utils.UTC8Loc())
 					if err != nil {
 						return
 					}
@@ -318,7 +317,7 @@ func GetRealtimeGoldPriceGraph(ctx context.Context, st, et time.Time) (*template
 			},
 		)
 
-	card := cardutil.NewCardBuildGraphHelper(graph).
+	card := larkcard.NewCardBuildGraphHelper(graph).
 		SetTitle("沪金所价格数据").
 		SetStartTime(st).
 		SetEndTime(et).
@@ -326,56 +325,56 @@ func GetRealtimeGoldPriceGraph(ctx context.Context, st, et time.Time) (*template
 	return card, nil
 }
 
-func init() {
-	params := tools.NewParameters("object").
-		AddProperty("start_time", &tools.Property{
-			Type:        "string",
-			Description: "开始时间，默认可以不穿，格式为YYYY-MM-DD HH:MM:SS",
-		}).
-		AddProperty("end_time", &tools.Property{
-			Type:        "string",
-			Description: "结束时间，默认可以不传，格式为YYYY-MM-DD HH:MM:SS",
-		}).
-		AddProperty("hours", &tools.Property{
-			Type:        "number",
-			Description: "查询的小时数，默认1小时",
-		}).
-		AddProperty("days", &tools.Property{
-			Type:        "number",
-			Description: "查询的天数，默认30天",
-		})
-	fcu := tools.NewFunctionCallUnit().
-		Name("gold_price_get").Desc("搜索指定时间范围内的金价变化情况，可选相对时间天或小时，也可以指定时间范围").Params(params).Func(goldWrap)
-	tools.M().Add(fcu)
-}
+// func init() {
+// 	params := tools.NewParameters("object").
+// 		AddProperty("start_time", &tools.Property{
+// 			Type:        "string",
+// 			Description: "开始时间，默认可以不穿，格式为YYYY-MM-DD HH:MM:SS",
+// 		}).
+// 		AddProperty("end_time", &tools.Property{
+// 			Type:        "string",
+// 			Description: "结束时间，默认可以不传，格式为YYYY-MM-DD HH:MM:SS",
+// 		}).
+// 		AddProperty("hours", &tools.Property{
+// 			Type:        "number",
+// 			Description: "查询的小时数，默认1小时",
+// 		}).
+// 		AddProperty("days", &tools.Property{
+// 			Type:        "number",
+// 			Description: "查询的天数，默认30天",
+// 		})
+// 	fcu := tools.NewFunctionCallUnit().
+// 		Name("gold_price_get").Desc("搜索指定时间范围内的金价变化情况，可选相对时间天或小时，也可以指定时间范围").Params(params).Func(goldWrap)
+// 	tools.M().Add(fcu)
+// }
 
-func goldWrap(ctx context.Context, meta *tools.FunctionCallMeta, args string) (any, error) {
-	s := struct {
-		StartTime string `json:"start_time"`
-		EndTime   string `json:"end_time"`
-		Days      *int   `json:"days"`
-		Hours     *int   `json:"hours"`
-	}{}
-	err := utility.UnmarshallStringPre(args, &s)
-	if err != nil {
-		return nil, err
-	}
-	argsSlice := make([]string, 0)
-	if s.Days != nil && *s.Days > 0 {
-		argsSlice = append(argsSlice, "--d", strconv.Itoa(*s.Days))
-	}
-	if s.Hours != nil && *s.Hours > 0 {
-		argsSlice = append(argsSlice, "--h", strconv.Itoa(*s.Hours))
-	}
-	if s.StartTime != "" {
-		argsSlice = append(argsSlice, "--st="+s.StartTime)
-	}
-	if s.EndTime != "" {
-		argsSlice = append(argsSlice, "--et="+s.EndTime)
-	}
-	metaData := handlerbase.NewBaseMetaDataWithChatIDUID(ctx, meta.ChatID, meta.UserID)
-	if err := GoldHandler(ctx, meta.LarkData, metaData, argsSlice...); err != nil {
-		return nil, err
-	}
-	return goption.Of(metaData.GetExtra("gold_result")).ValueOr("执行完成但没有结果"), nil
-}
+// func goldWrap(ctx context.Context, meta *tools.FunctionCallMeta, args string) (any, error) {
+// 	s := struct {
+// 		StartTime string `json:"start_time"`
+// 		EndTime   string `json:"end_time"`
+// 		Days      *int   `json:"days"`
+// 		Hours     *int   `json:"hours"`
+// 	}{}
+// 	err := utils.UnmarshallStringPre(args, &s)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	argsSlice := make([]string, 0)
+// 	if s.Days != nil && *s.Days > 0 {
+// 		argsSlice = append(argsSlice, "--d", strconv.Itoa(*s.Days))
+// 	}
+// 	if s.Hours != nil && *s.Hours > 0 {
+// 		argsSlice = append(argsSlice, "--h", strconv.Itoa(*s.Hours))
+// 	}
+// 	if s.StartTime != "" {
+// 		argsSlice = append(argsSlice, "--st="+s.StartTime)
+// 	}
+// 	if s.EndTime != "" {
+// 		argsSlice = append(argsSlice, "--et="+s.EndTime)
+// 	}
+// 	metaData := xhandler.NewBaseMetaDataWithChatIDUID(ctx, meta.ChatID, meta.UserID)
+// 	if err := GoldHandler(ctx, meta.LarkData, metaData, argsSlice...); err != nil {
+// 		return nil, err
+// 	}
+// 	return goption.Of(metaData.GetExtra("gold_result")).ValueOr("执行完成但没有结果"), nil
+// }

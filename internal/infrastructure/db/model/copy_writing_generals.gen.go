@@ -4,12 +4,14 @@
 
 package model
 
+import "github.com/lib/pq"
+
 const TableNameCopyWritingGeneral = "copy_writing_generals"
 
 // CopyWritingGeneral mapped from table <copy_writing_generals>
 type CopyWritingGeneral struct {
-	Endpoint string `gorm:"column:endpoint;primaryKey" json:"endpoint"`
-	Content  string `gorm:"column:content" json:"content"`
+	Endpoint string         `gorm:"column:endpoint;primaryKey" json:"endpoint"`
+	Content  pq.StringArray `gorm:"column:content;type:text[]" json:"content"`
 }
 
 // TableName CopyWritingGeneral's table name

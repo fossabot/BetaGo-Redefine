@@ -4,8 +4,8 @@ import (
 	"context"
 	"os"
 
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/config"
 	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/otel"
-	"github.com/BetaGoRobot/BetaGo/consts"
 	"go.opentelemetry.io/contrib/bridges/otelzap"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
@@ -19,7 +19,7 @@ func L() *ContextualLogger {
 }
 
 func Init() {
-	otelCore := otelzap.NewCore(consts.BotIdentifier, otelzap.WithLoggerProvider(otel.LoggerProvider()))
+	otelCore := otelzap.NewCore(config.Get().BaseInfo.RobotName, otelzap.WithLoggerProvider(otel.LoggerProvider()))
 	otelLogger := zap.New(otelCore, zap.AddCaller())
 
 	// Stdout logger

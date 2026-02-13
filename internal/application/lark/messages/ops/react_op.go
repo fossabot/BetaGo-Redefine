@@ -3,19 +3,19 @@ package ops
 import (
 	"context"
 
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/config"
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/db/query"
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/lark_dal/larkmsg"
 	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/otel"
 	"github.com/BetaGoRobot/BetaGo-Redefine/pkg/logs"
+	"github.com/BetaGoRobot/BetaGo-Redefine/pkg/utils"
 	"github.com/BetaGoRobot/BetaGo-Redefine/pkg/xhandler"
-	"github.com/BetaGoRobot/BetaGo/consts"
-	"github.com/BetaGoRobot/BetaGo/dal/lark"
-	"github.com/BetaGoRobot/BetaGo/utility"
-	"github.com/BetaGoRobot/BetaGo/utility/database"
-	"github.com/BetaGoRobot/BetaGo/utility/larkutils"
 	"github.com/BetaGoRobot/go_utils/reflecting"
 	"github.com/bytedance/sonic"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
-	"go.opentelemetry.io/otel/attribute"
+	"github.com/pkg/errors"
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 )
 
 var _ Op = &ReactMsgOperator{}
@@ -40,11 +40,6 @@ func (r *ReactMsgOperator) PreRun(ctx context.Context, event *larkim.P2MessageRe
 	defer span.End()
 	defer func() { span.RecordError(err) }()
 
-	// // 先判断群聊的功能启用情况
-	// if !larkutils.CheckFunctionEnabling(*event.Event.Message.ChatId, consts.LarkFunctionRandomReact) {
-	// 	span.RecordError(err)
-	// 	return errors.Wrap(consts.ErrStageSkip, "ReactMsgOperator: Not enabled")
-	// }
 	return
 }
 
@@ -63,44 +58,30 @@ func (r *ReactMsgOperator) Run(ctx context.Context, event *larkim.P2MessageRecei
 	// React
 
 	// 开始摇骰子, 默认概率10%
-	realRate := utility.MustAtoI(utility.GetEnvWithDefault("REACTION_DEFAULT_RATE", "10"))
-	if utility.Probability(float64(realRate) / 100) {
-		// sendMsg
-		req := larkim.NewCreateMessageReactionReqBuilder().
-			MessageId(*event.Event.Message.MessageId).
-			Body(
-				larkim.NewCreateMessageReactionReqBodyBuilder().
-					ReactionType(
-						larkim.NewEmojiBuilder().
-							EmojiType(larkutils.GetRandomEmoji()).
-							Build(),
-					).
-					Build(),
-			).
-			Build()
-		resp, err := lark.LarkClient.Im.V1.MessageReaction.Create(ctx, req)
+	realRate := config.Get().RateConfig.ReactionDefaultRate
+	if utils.Prob(float64(realRate) / 100) {
+		_, err := larkmsg.AddReaction(ctx, larkmsg.GetRandomEmoji(), *event.Event.Message.MessageId)
 		if err != nil {
 			logs.L().Ctx(ctx).Error("reactMessage error", zap.Error(err), zap.String("TraceID", span.SpanContext().TraceID().String()))
 			return err
 		}
-		logs.L().Ctx(ctx).Info("reactMessage", zap.Any("resp", resp))
 	} else {
-		if utility.Probability(float64(realRate) / 100) {
-			res, hitCache := database.FindByCacheFunc(database.ReactImageMeterial{
-				GuildID: *event.Event.Message.ChatId,
-			}, func(d database.ReactImageMeterial) string {
-				return d.GuildID
-			})
-			span.SetAttributes(attribute.Bool("ReactionImageMaterial hitCache", hitCache))
-			if len(res) == 0 {
-				return
+		if utils.Prob(float64(realRate) / 100) {
+			ins := query.Q.ReactImageMeterial
+			res, err := ins.WithContext(ctx).Where(ins.GuildID.Eq(*event.Event.Message.ChatId)).Find()
+			if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+				logs.L().Ctx(ctx).Error("reactMessage error", zap.Error(err), zap.String("TraceID", span.SpanContext().TraceID().String()))
+				return err
 			}
-			target := utility.SampleSlice(res)
-			if target.Type == consts.LarkResourceTypeImage {
+			if len(res) == 0 {
+				return nil
+			}
+			target := utils.SampleSlice(res)
+			if target.Type == larkim.MsgTypeImage {
 				content, _ := sonic.MarshalString(map[string]string{
 					"image_key": target.FileID,
 				})
-				_, err = larkutils.ReplyMsgRawContentType(
+				_, err = larkmsg.ReplyMsgRawContentType(
 					ctx,
 					*event.Event.Message.MessageId,
 					larkim.MsgTypeImage,
@@ -112,7 +93,7 @@ func (r *ReactMsgOperator) Run(ctx context.Context, event *larkim.P2MessageRecei
 				content, _ := sonic.MarshalString(map[string]string{
 					"file_key": target.FileID,
 				})
-				_, err = larkutils.ReplyMsgRawContentType(
+				_, err = larkmsg.ReplyMsgRawContentType(
 					ctx,
 					*event.Event.Message.MessageId,
 					larkim.MsgTypeSticker,

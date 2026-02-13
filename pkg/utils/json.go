@@ -18,7 +18,33 @@ func MustMarshal(v any) []byte {
 	return s
 }
 
-func UnmarshallStrPre[T any](s string, val *T) error {
+func UnmarshalStrPre[T any](s string, val *T) error {
+	err := sonic.UnmarshalString(s, &val)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func JSON2Map(s string) (map[string]any, error) {
+	var m map[string]any
+	err := sonic.UnmarshalString(s, &m)
+	if err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+func MustUnmarshalString[T any](s string) *T {
+	t := new(T)
+	err := sonic.UnmarshalString(s, &t)
+	if err != nil {
+		panic(err)
+	}
+	return t
+}
+
+func UnmarshalStringPre[T any](s string, val *T) error {
 	err := sonic.UnmarshalString(s, &val)
 	if err != nil {
 		return err

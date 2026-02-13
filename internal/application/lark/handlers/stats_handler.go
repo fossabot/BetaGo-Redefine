@@ -2,26 +2,25 @@ package handlers
 
 import (
 	"context"
+	"errors"
 
-	handlerbase "github.com/BetaGoRobot/BetaGo/handler/handler_base"
-	"github.com/BetaGoRobot/BetaGo/utility/database"
-	"github.com/BetaGoRobot/BetaGo/utility/otel"
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/db/query"
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/otel"
+	"github.com/BetaGoRobot/BetaGo-Redefine/pkg/xhandler"
 	"github.com/BetaGoRobot/go_utils/reflecting"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
-	"go.opentelemetry.io/otel/attribute"
+	"gorm.io/gorm"
 )
 
-func StatsGetHandler(ctx context.Context, data *larkim.P2MessageReceiveV1, metaData *handlerbase.BaseMetaData, args ...string) (err error) {
+func StatsGetHandler(ctx context.Context, data *larkim.P2MessageReceiveV1, metaData *xhandler.BaseMetaData, args ...string) (err error) {
 	ctx, span := otel.T().Start(ctx, reflecting.GetCurrentFunc())
 	defer span.End()
 	defer func() { span.RecordError(err) }()
-
-	resList, hitCache := database.FindByCacheFunc(
-		database.InteractionStats{}, func(item database.InteractionStats) string {
-			return item.GuildID
-		},
-	)
-	span.SetAttributes(attribute.Bool("InteractionStats hitCache", hitCache))
+	ins := query.Q.InteractionStat
+	resList, err := ins.WithContext(ctx).Where(ins.GuildID.Eq(metaData.ChatID)).Find()
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
+	}
 
 	for _, res := range resList {
 		_ = res

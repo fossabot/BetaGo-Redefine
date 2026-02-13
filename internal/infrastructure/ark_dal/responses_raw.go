@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/otel"
 	redis_dal "github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/redis"
 	"github.com/BetaGoRobot/BetaGo-Redefine/pkg/logs"
-	"github.com/BetaGoRobot/BetaGo/utility/otel"
 	"github.com/BetaGoRobot/go_utils/reflecting"
 	"github.com/bytedance/gg/gptr"
 	"github.com/redis/go-redis/v9"
@@ -18,7 +18,7 @@ import (
 )
 
 func ResponseWithCache(ctx context.Context, sysPrompt, userPrompt, modelID string) (res string, err error) {
-	ctx, span := otel.LarkRobotOtelTracer.Start(ctx, reflecting.GetCurrentFunc())
+	ctx, span := otel.T().Start(ctx, reflecting.GetCurrentFunc())
 	span.SetAttributes(attribute.Key("sys_prompt").String(sysPrompt))
 	span.SetAttributes(attribute.Key("user_prompt").String(userPrompt))
 	defer span.End()

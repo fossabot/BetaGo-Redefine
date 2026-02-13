@@ -32,7 +32,8 @@ func Cli() *RAGSystem {
 	return cli
 }
 
-func Init(config *config.BaseConfig) {
+func Init() {
+	config := config.Get()
 	var err error
 	ctx := context.Background()
 	cfg := Config{

@@ -23,6 +23,14 @@ func main() {
 		panic(err)
 	}
 	g.UseDB(gormdb) // reuse your gorm db
+	dataMap := map[string]func(detailType gorm.ColumnType) (dataType string){
+		// 针对 text[] 数组
+		"text[]": func(detailType gorm.ColumnType) (dataType string) {
+			return "pq.StringArray"
+		},
+	}
+
+	g.WithDataTypeMap(dataMap)
 	tables := g.GenerateAllTable()
 	g.ApplyBasic(tables...)
 	// Generate the code

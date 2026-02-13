@@ -7,18 +7,18 @@ import (
 	"strings"
 	"time"
 
-	"github.com/BetaGoRobot/BetaGo/consts"
-	handlerbase "github.com/BetaGoRobot/BetaGo/handler/handler_base"
-	handlertypes "github.com/BetaGoRobot/BetaGo/handler/handler_types"
-	"github.com/BetaGoRobot/BetaGo/utility"
-	"github.com/BetaGoRobot/BetaGo/utility/database"
-	"github.com/BetaGoRobot/BetaGo/utility/larkutils"
-	"github.com/BetaGoRobot/BetaGo/utility/larkutils/larkmsgutils"
-	"github.com/BetaGoRobot/BetaGo/utility/larkutils/templates"
-	"github.com/BetaGoRobot/BetaGo/utility/logs"
-	opensearchdal "github.com/BetaGoRobot/BetaGo/utility/opensearch_dal"
-	"github.com/BetaGoRobot/BetaGo/utility/otel"
-	"github.com/BetaGoRobot/BetaGo/utility/vadvisor"
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/config"
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/db/query"
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/lark_dal/larkmsg"
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/lark_dal/larkmsg/larktpl"
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/xmodel"
+
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/opensearch"
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/otel"
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/vadvisor"
+	"github.com/BetaGoRobot/BetaGo-Redefine/pkg/logs"
+	"github.com/BetaGoRobot/BetaGo-Redefine/pkg/utils"
+	"github.com/BetaGoRobot/BetaGo-Redefine/pkg/xhandler"
 	commonutils "github.com/BetaGoRobot/go_utils/common_utils"
 	"github.com/BetaGoRobot/go_utils/reflecting"
 	"github.com/bytedance/sonic"
@@ -32,7 +32,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func WordCloudHandler(ctx context.Context, data *larkim.P2MessageReceiveV1, metaData *handlerbase.BaseMetaData, args ...string) (err error) {
+func WordCloudHandler(ctx context.Context, data *larkim.P2MessageReceiveV1, metaData *xhandler.BaseMetaData, args ...string) (err error) {
 	ctx, span := otel.T().Start(ctx, reflecting.GetCurrentFunc())
 	span.SetAttributes(attribute.Key("event").String(larkcore.Prettify(data)))
 	defer span.End()
@@ -84,11 +84,11 @@ func WordCloudHandler(ctx context.Context, data *larkim.P2MessageReceiveV1, meta
 	// 如果有st，et的配置，用st，et的配置来覆盖
 	if stStr, ok := argMap["st"]; ok {
 		if etStr, ok := argMap["et"]; ok {
-			st, err = time.ParseInLocation(time.DateTime, stStr, utility.UTCPlus8Loc())
+			st, err = time.ParseInLocation(time.DateTime, stStr, utils.UTC8Loc())
 			if err != nil {
 				return err
 			}
-			et, err = time.ParseInLocation(time.DateTime, etStr, utility.UTCPlus8Loc())
+			et, err = time.ParseInLocation(time.DateTime, etStr, utils.UTC8Loc())
 			if err != nil {
 				return err
 			}
@@ -124,8 +124,8 @@ func WordCloudHandler(ctx context.Context, data *larkim.P2MessageReceiveV1, meta
 	}
 	wordCloud.Build(ctx)
 
-	tpl := templates.GetTemplateV2(templates.WordCountTemplate)
-	cardVar := &templates.WordCountCardVars{
+	tpl := larktpl.GetTemplateV2[larktpl.WordCountCardVars[xmodel.MessageChunkLogV3]](ctx, larktpl.WordCountTemplate)
+	cardVar := &larktpl.WordCountCardVars[xmodel.MessageChunkLogV3]{
 		UserList:  userList,
 		WordCloud: wordCloud,
 		Chunks:    chunks,
@@ -133,14 +133,13 @@ func WordCloudHandler(ctx context.Context, data *larkim.P2MessageReceiveV1, meta
 		EndTime:   et.Format("2006-01-02 15:04"),
 	}
 	tpl.WithData(cardVar)
-	cardContent := templates.NewCardContentV2(ctx, tpl)
-
+	cardContent := larktpl.NewCardContentV2[larktpl.WordCountCardVars[xmodel.MessageChunkLogV3]](ctx, tpl.TemplateID)
 	if metaData != nil && metaData.Refresh {
-		err = larkutils.PatchCard(ctx,
+		err = larkmsg.PatchCard(ctx,
 			cardContent,
 			*data.Event.Message.MessageId)
 	} else {
-		err = larkutils.ReplyCard(ctx,
+		err = larkmsg.ReplyCard(ctx,
 			cardContent,
 			*data.Event.Message.MessageId, "", false)
 	}
@@ -236,8 +235,8 @@ func GetToneStyle(key string) (phrase string, color string) {
 	return key, "neutral"
 }
 
-func getChunks(ctx context.Context, chatID string, st, et time.Time, size int, sort elastic.Sorter) (chunks []*templates.ChunkData, err error) {
-	chunks = make([]*templates.ChunkData, 0)
+func getChunks(ctx context.Context, chatID string, st, et time.Time, size int, sort elastic.Sorter) (chunks []*larktpl.ChunkData[xmodel.MessageChunkLogV3], err error) {
+	chunks = make([]*larktpl.ChunkData[xmodel.MessageChunkLogV3], 0)
 	queryReq := NewSearchRequest().
 		Query(NewBoolQuery().Must(
 			NewTermQuery("group_id", chatID),
@@ -256,48 +255,54 @@ func getChunks(ctx context.Context, chatID string, st, et time.Time, size int, s
 	if err != nil {
 		return
 	}
-	resp, err := opensearchdal.SearchDataStr(ctx, consts.LarkChunkIndex, data)
+	resp, err := opensearch.SearchDataStr(ctx, config.Get().OpensearchConfig.LarkChunkIndex, data)
 	if err != nil {
 		return
 	}
 
-	return commonutils.TransSlice(resp.Hits.Hits, func(hit opensearchapi.SearchHit) (target *templates.ChunkData) {
-		chunkLog := &handlertypes.MessageChunkLogV3{}
+	return commonutils.TransSlice(resp.Hits.Hits, func(hit opensearchapi.SearchHit) (target *larktpl.ChunkData[xmodel.MessageChunkLogV3]) {
+		chunkLog := &xmodel.MessageChunkLogV3{}
 		sonic.Unmarshal(hit.Source, chunkLog)
-		chunkData := &templates.ChunkData{
-			MessageChunkLogV3: chunkLog,
+		chunkData := &larktpl.ChunkData[xmodel.MessageChunkLogV3]{
+			ChunkLog: chunkLog,
 		}
-		chunkData.Intent = larkmsgutils.TagText(GetIntentPhraseWithFallback(chunkLog.Intent))
-		chunkData.Sentiment = larkmsgutils.TagText(SentimentColor(chunkData.SentimentAndTone.Sentiment))
-		chunkData.Tones = strings.Join(commonutils.TransSlice(chunkData.SentimentAndTone.Tones, func(s string) string { return larkmsgutils.TagText(GetToneStyle(s)) }), "")
-		chunkData.SentimentAndTone = nil
+		chunkData.ChunkLog.Intent = larkmsg.TagText(GetIntentPhraseWithFallback(chunkLog.Intent))
+		chunkData.Sentiment = larkmsg.TagText(SentimentColor(chunkData.ChunkLog.SentimentAndTone.Sentiment))
+		chunkData.Tones = strings.Join(commonutils.TransSlice(chunkData.ChunkLog.SentimentAndTone.Tones, func(s string) string { return larkmsg.TagText(GetToneStyle(s)) }), "")
+		chunkData.ChunkLog.SentimentAndTone = nil
 
-		chunkData.UserIDs4Lark = commonutils.TransSlice(chunkLog.InteractionAnalysis.Participants, func(p *handlertypes.Participant) *templates.UserUnit { return &templates.UserUnit{ID: p.UserID} })
-		chunkData.UserIDs4Lark = utility.Dedup(chunkData.UserIDs4Lark)
-		chunkData.UserIDs = nil
+		chunkData.UserIDs4Lark = commonutils.TransSlice(chunkLog.InteractionAnalysis.Participants, func(p *xmodel.Participant) *larktpl.UserUnit { return &larktpl.UserUnit{ID: p.UserID} })
+		chunkData.UserIDs4Lark = utils.Dedup(chunkData.UserIDs4Lark)
+		chunkData.ChunkLog.UserIDs = nil
 
-		chunkData.UnresolvedQuestions = strings.Join(commonutils.TransSlice(chunkLog.InteractionAnalysis.UnresolvedQuestions, func(q string) string { return larkmsgutils.TagText(q, "red") }), "")
+		chunkData.UnresolvedQuestions = strings.Join(commonutils.TransSlice(chunkLog.InteractionAnalysis.UnresolvedQuestions, func(q string) string { return larkmsg.TagText(q, "red") }), "")
 		return chunkData
 	}), err
 }
 
-func genHotRate(ctx context.Context, helper *trendInternalHelper, top int) (userList []*templates.UserListItem, err error) {
+func genHotRate(ctx context.Context, helper *trendInternalHelper, top int) (userList []*larktpl.UserListItem, err error) {
 	// 统计用户发送的消息数量
-	trendMap := make(map[string]*templates.UserListItem)
-	msgTrend, err := helper.TrendRate(ctx, consts.LarkMsgIndex, "user_id", uint64(top))
+	trendMap := make(map[string]*larktpl.UserListItem)
+	msgTrend, err := helper.TrendRate(ctx, config.Get().OpensearchConfig.LarkMsgIndex, "user_id", uint64(top))
 	for _, bucket := range msgTrend.Dimension.Buckets {
-		trendMap[bucket.Key] = &templates.UserListItem{Number: -1, User: []*templates.UserUnit{{ID: bucket.Key}}, MsgCnt: bucket.DocCount}
+		trendMap[bucket.Key] = &larktpl.UserListItem{Number: -1, User: []*larktpl.UserUnit{{ID: bucket.Key}}, MsgCnt: bucket.DocCount}
 	}
 	type UserCountResult struct {
 		OpenID string `gorm:"column:open_id"`
 		Total  int64  `gorm:"column:total"`
 	}
-	actionRes := []*UserCountResult{}
-	ins := database.GetDbConnection().Model(&database.InteractionStats{}).
-		Select("open_id, count(*) as total").
-		Where("guild_id = ? and created_at > ? and created_at < ?", helper.chatID, helper.st, helper.et).
-		Group("open_id")
-	if err = ins.Find(&actionRes).Error; err != nil {
+
+	type GroupResult struct {
+		OpenID string // 根据你的实际 OpenID 类型定义 (string, int 等)
+		Total  int64  `gorm:"column:total"` // 必须对应 As("total") 的名称
+	}
+	actionRes := make([]*GroupResult, 0)
+	ins := query.Q.InteractionStat
+	err = ins.WithContext(ctx).
+		Select(ins.OpenID, ins.ALL.Count().As("total")).
+		Where(ins.GuildID.Eq(helper.chatID), ins.CreatedAt.Gt(helper.st), ins.CreatedAt.Lt(helper.et)).
+		Group(ins.OpenID).Scan(&actionRes)
+	if err != nil {
 		return
 	}
 
@@ -305,11 +310,11 @@ func genHotRate(ctx context.Context, helper *trendInternalHelper, top int) (user
 		if item, ok := trendMap[res.OpenID]; ok {
 			item.ActionCnt = int(res.Total)
 		} else {
-			trendMap[res.OpenID] = &templates.UserListItem{Number: -1, User: []*templates.UserUnit{{ID: res.OpenID}}, ActionCnt: int(res.Total)}
+			trendMap[res.OpenID] = &larktpl.UserListItem{Number: -1, User: []*larktpl.UserUnit{{ID: res.OpenID}}, ActionCnt: int(res.Total)}
 		}
 	}
 
-	userList = make([]*templates.UserListItem, 0, len(trendMap))
+	userList = make([]*larktpl.UserListItem, 0, len(trendMap))
 	for _, item := range trendMap {
 		userList = append(userList, item)
 	}
@@ -379,7 +384,7 @@ func genWordCount(ctx context.Context, chatID string, st, et time.Time) (wc Word
 	}
 	logs.L().Ctx(ctx).Info("wordCloudTagsAgg query", zap.String("query", string(rawQuery)))
 	// 统计一下词频
-	resp, err := opensearchdal.SearchData(ctx, consts.LarkMsgIndex, query)
+	resp, err := opensearch.SearchData(ctx, config.Get().OpensearchConfig.LarkMsgIndex, query)
 	if err != nil {
 		return
 	}

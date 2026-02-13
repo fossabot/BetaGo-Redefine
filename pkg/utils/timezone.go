@@ -13,11 +13,28 @@ func UTC8Time() time.Time {
 	return time.Now().In(UTC8Loc())
 }
 
-func Epo2DateZoneMil(epoch int64, loc *time.Location, format string) string {
-	return time.Unix(epoch, 0).In(loc).Format(format)
+func Epo2DateZoneMil(millSecs int64, location *time.Location, fmt string) string {
+	return Epo2DateZoneStr(millSecs/1000, location, fmt)
+}
+
+func Epo2DateZoneSec(secs int64, location *time.Location, fmt string) string {
+	return Epo2DateZoneStr(secs, location, fmt)
+}
+
+func Epo2DateZoneMicro(microSecs int64, location *time.Location, fmt string) string {
+	return Epo2DateZoneStr(microSecs/1000/1000, location, fmt)
+}
+
+func Epo2DateZoneStr(secs int64, location *time.Location, fmt string) string {
+	return time.Unix(secs, 0).In(location).Format(fmt)
 }
 
 func EpoMil2DateStr(epoMil string) string {
 	epoMilInt, _ := strconv.ParseInt(epoMil, 10, 64)
 	return time.Unix(int64(epoMilInt)/1000, 0).In(UTC8Loc()).Format("2006-01-02 15:04:05")
+}
+
+func EpoMicro2DateStr(epoMicro string) string {
+	epoMilInt, _ := strconv.ParseInt(epoMicro, 10, 64)
+	return time.Unix(int64(epoMilInt)/1000/1000, 0).In(UTC8Loc()).Format("2006-01-02 15:04:05")
 }

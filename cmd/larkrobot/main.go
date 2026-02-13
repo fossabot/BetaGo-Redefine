@@ -4,10 +4,15 @@ import (
 	"context"
 	"os"
 
+	larkchunking "github.com/BetaGoRobot/BetaGo-Redefine/internal/application/lark/chunking"
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/aktool"
 	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/ark_dal"
 	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/config"
 	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/db"
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/gotify"
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/lark_dal"
 	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/miniodal"
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/neteaseapi"
 	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/opensearch"
 	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/otel"
 	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/retriver"
@@ -32,7 +37,12 @@ func main() {
 	opensearch.Init(config.OpensearchConfig)
 	ark_dal.Init(config.ArkConfig)
 	miniodal.Init(config.MinioConfig)
-	retriver.Init(config)
+	retriver.Init()
+	neteaseapi.Init()
+	aktool.Init()
+	gotify.Init()
+	larkchunking.Init()
+	lark_dal.Init()
 
 	go registerHandlers(config)
 	select {}

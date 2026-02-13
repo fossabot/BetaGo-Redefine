@@ -8,28 +8,24 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/BetaGoRobot/BetaGo/consts"
-	"github.com/BetaGoRobot/BetaGo/consts/env"
-	"github.com/BetaGoRobot/BetaGo/dal/lark"
-	handlerbase "github.com/BetaGoRobot/BetaGo/handler/handler_base"
-	handlertypes "github.com/BetaGoRobot/BetaGo/handler/handler_types"
-	"github.com/BetaGoRobot/BetaGo/utility"
-	"github.com/BetaGoRobot/BetaGo/utility/ark/responses"
-	"github.com/BetaGoRobot/BetaGo/utility/ark/tools"
-	"github.com/BetaGoRobot/BetaGo/utility/chunking"
-	"github.com/BetaGoRobot/BetaGo/utility/history"
-	"github.com/BetaGoRobot/BetaGo/utility/larkutils"
-	"github.com/BetaGoRobot/BetaGo/utility/larkutils/larkconsts"
-	"github.com/BetaGoRobot/BetaGo/utility/larkutils/larkimg"
-	"github.com/BetaGoRobot/BetaGo/utility/larkutils/larkmsgutils"
-	"github.com/BetaGoRobot/BetaGo/utility/larkutils/templates"
-	"github.com/BetaGoRobot/BetaGo/utility/logs"
-	"github.com/BetaGoRobot/BetaGo/utility/message"
-	opensearchdal "github.com/BetaGoRobot/BetaGo/utility/opensearch_dal"
-	"github.com/BetaGoRobot/BetaGo/utility/otel"
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/application/lark/history"
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/ark_dal"
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/config"
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/lark_dal"
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/lark_dal/larkimg"
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/lark_dal/larkmsg"
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/lark_dal/larkmsg/larkcontent"
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/lark_dal/larkmsg/larktpl"
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/opensearch"
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/otel"
+
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/xmodel"
+	"github.com/BetaGoRobot/BetaGo-Redefine/pkg/logs"
+	"github.com/BetaGoRobot/BetaGo-Redefine/pkg/utils"
+	"github.com/BetaGoRobot/BetaGo-Redefine/pkg/xchunk"
+	"github.com/BetaGoRobot/BetaGo-Redefine/pkg/xhandler"
 	commonutils "github.com/BetaGoRobot/go_utils/common_utils"
 	"github.com/BetaGoRobot/go_utils/reflecting"
-	"github.com/bytedance/gg/goption"
 	"github.com/bytedance/sonic"
 	"github.com/defensestation/osquery"
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
@@ -56,7 +52,7 @@ type traceItem struct {
 //	@return error
 //	@author heyuhengmatt
 //	@update 2024-08-06 08:27:33
-func DebugGetIDHandler(ctx context.Context, data *larkim.P2MessageReceiveV1, metaData *handlerbase.BaseMetaData, args ...string) (err error) {
+func DebugGetIDHandler(ctx context.Context, data *larkim.P2MessageReceiveV1, metaData *xhandler.BaseMetaData, args ...string) (err error) {
 	ctx, span := otel.T().Start(ctx, reflecting.GetCurrentFunc())
 	span.SetAttributes(attribute.Key("event").String(larkcore.Prettify(data)))
 	defer span.End()
@@ -66,7 +62,7 @@ func DebugGetIDHandler(ctx context.Context, data *larkim.P2MessageReceiveV1, met
 		return errors.New("No parent Msg Quoted")
 	}
 
-	err = larkutils.ReplyCardText(ctx, getIDText+*data.Event.Message.ParentId, *data.Event.Message.MessageId, "_getID", false)
+	err = larkmsg.ReplyCardText(ctx, getIDText+*data.Event.Message.ParentId, *data.Event.Message.MessageId, "_getID", false)
 	if err != nil {
 		logs.L().Ctx(ctx).Error("ReplyMessage", zap.Error(err), zap.String("TraceID", span.SpanContext().TraceID().String()))
 		return err
@@ -82,14 +78,14 @@ func DebugGetIDHandler(ctx context.Context, data *larkim.P2MessageReceiveV1, met
 //	@return error
 //	@author heyuhengmatt
 //	@update 2024-08-06 08:27:29
-func DebugGetGroupIDHandler(ctx context.Context, data *larkim.P2MessageReceiveV1, metaData *handlerbase.BaseMetaData, args ...string) (err error) {
+func DebugGetGroupIDHandler(ctx context.Context, data *larkim.P2MessageReceiveV1, metaData *xhandler.BaseMetaData, args ...string) (err error) {
 	ctx, span := otel.T().Start(ctx, reflecting.GetCurrentFunc())
 	span.SetAttributes(attribute.Key("event").String(larkcore.Prettify(data)))
 	defer span.End()
 	defer func() { span.RecordError(err) }()
 	chatID := data.Event.Message.ChatId
 	if chatID != nil {
-		err := larkutils.ReplyCardText(ctx, getGroupIDText+*chatID, *data.Event.Message.MessageId, "_getGroupID", false)
+		err := larkmsg.ReplyCardText(ctx, getGroupIDText+*chatID, *data.Event.Message.MessageId, "_getGroupID", false)
 		if err != nil {
 			logs.L().Ctx(ctx).Error("ReplyMessage", zap.Error(err), zap.String("TraceID", span.SpanContext().TraceID().String()))
 			return err
@@ -107,7 +103,7 @@ func DebugGetGroupIDHandler(ctx context.Context, data *larkim.P2MessageReceiveV1
 //	@return error
 //	@author heyuhengmatt
 //	@update 2024-08-06 08:27:25
-func DebugTryPanicHandler(ctx context.Context, data *larkim.P2MessageReceiveV1, metaData *handlerbase.BaseMetaData, args ...string) (err error) {
+func DebugTryPanicHandler(ctx context.Context, data *larkim.P2MessageReceiveV1, metaData *xhandler.BaseMetaData, args ...string) (err error) {
 	ctx, span := otel.T().Start(ctx, reflecting.GetCurrentFunc())
 	span.SetAttributes(attribute.Key("event").String(larkcore.Prettify(data)))
 	defer span.End()
@@ -116,7 +112,7 @@ func DebugTryPanicHandler(ctx context.Context, data *larkim.P2MessageReceiveV1, 
 }
 
 func (t *traceItem) TraceURLMD() string {
-	return strings.Join([]string{t.CreateTime, ": [Trace-", t.TraceID[:8], "]", "(", utility.GenTraceURL(t.TraceID), ")"}, "")
+	return strings.Join([]string{t.CreateTime, ": [Trace-", t.TraceID[:8], "]", "(", utils.GenTraceURL(t.TraceID), ")"}, "")
 }
 
 // GetTraceFromMsgID to be filled
@@ -139,15 +135,15 @@ func GetTraceFromMsgID(ctx context.Context, msgID string) (iter.Seq[*traceItem],
 		).
 		SourceIncludes("create_time", "trace_id").
 		Sort("create_time", "desc")
-	resp, err := opensearchdal.SearchData(
-		ctx, consts.LarkMsgIndex, query,
+	resp, err := opensearch.SearchData(
+		ctx, config.Get().OpensearchConfig.LarkMsgIndex, query,
 	)
 	if err != nil {
 		return nil, err
 	}
 	return func(yield func(*traceItem) bool) {
 		for _, hit := range resp.Hits.Hits {
-			src := &handlertypes.MessageIndex{}
+			src := &xmodel.MessageIndex{}
 			err = sonic.Unmarshal(hit.Source, &src)
 			if err != nil {
 				return
@@ -169,7 +165,7 @@ func GetTraceFromMsgID(ctx context.Context, msgID string) (iter.Seq[*traceItem],
 //	@return error
 //	@author heyuhengmatt
 //	@update 2024-08-06 08:27:23
-func DebugTraceHandler(ctx context.Context, data *larkim.P2MessageReceiveV1, metaData *handlerbase.BaseMetaData, args ...string) (err error) {
+func DebugTraceHandler(ctx context.Context, data *larkim.P2MessageReceiveV1, metaData *xhandler.BaseMetaData, args ...string) (err error) {
 	ctx, span := otel.T().Start(ctx, reflecting.GetCurrentFunc())
 	span.SetAttributes(attribute.Key("event").String(larkcore.Prettify(data)))
 	defer span.End()
@@ -181,7 +177,7 @@ func DebugTraceHandler(ctx context.Context, data *larkim.P2MessageReceiveV1, met
 	)
 	if data.Event.Message.ThreadId != nil { // 话题模式，找到所有的traceID
 		replyInThread = true
-		resp, err := lark.LarkClient.Im.Message.List(ctx,
+		resp, err := lark_dal.Client().Im.Message.List(ctx,
 			larkim.NewListMessageReqBuilder().
 				ContainerId(*data.Event.Message.ThreadId).
 				ContainerIdType("thread").
@@ -220,7 +216,7 @@ func DebugTraceHandler(ctx context.Context, data *larkim.P2MessageReceiveV1, met
 		return errors.New("No traceID found")
 	}
 	traceIDStr := "TraceIDs:\n" + strings.Join(traceIDs, "\n")
-	err = larkutils.ReplyCardText(ctx, traceIDStr, *data.Event.Message.MessageId, "_trace", replyInThread)
+	err = larkmsg.ReplyCardText(ctx, traceIDStr, *data.Event.Message.MessageId, "_trace", replyInThread)
 	if err != nil {
 		logs.L().Ctx(ctx).Error("ReplyMessage", zap.Error(err), zap.String("TraceID", span.SpanContext().TraceID().String()))
 		return err
@@ -234,7 +230,7 @@ func DebugTraceHandler(ctx context.Context, data *larkim.P2MessageReceiveV1, met
 //	@param data *larkim.P2MessageReceiveV1
 //	@param args ...string
 //	@return error
-func DebugRevertHandler(ctx context.Context, data *larkim.P2MessageReceiveV1, metaData *handlerbase.BaseMetaData, args ...string) (err error) {
+func DebugRevertHandler(ctx context.Context, data *larkim.P2MessageReceiveV1, metaData *xhandler.BaseMetaData, args ...string) (err error) {
 	ctx, span := otel.T().Start(ctx, reflecting.GetCurrentFunc())
 	span.SetAttributes(attribute.Key("event").String(larkcore.Prettify(data)))
 	defer span.End()
@@ -244,13 +240,13 @@ func DebugRevertHandler(ctx context.Context, data *larkim.P2MessageReceiveV1, me
 
 	if data.Event.Message.ThreadId != nil { // 话题模式，找到所有的traceID
 		res = "话题模式的消息，所有的机器人发言都被撤回了"
-		resp, err := lark.LarkClient.Im.Message.List(ctx, larkim.NewListMessageReqBuilder().ContainerIdType("thread").ContainerId(*data.Event.Message.ThreadId).Build())
+		resp, err := lark_dal.Client().Im.Message.List(ctx, larkim.NewListMessageReqBuilder().ContainerIdType("thread").ContainerId(*data.Event.Message.ThreadId).Build())
 		if err != nil {
 			return err
 		}
 		for _, msg := range resp.Data.Items {
-			if *msg.Sender.Id == larkconsts.BotAppID {
-				resp, err := lark.LarkClient.Im.Message.Delete(ctx, larkim.NewDeleteMessageReqBuilder().MessageId(*msg.MessageId).Build())
+			if *msg.Sender.Id == config.Get().LarkConfig.BotOpenID {
+				resp, err := lark_dal.Client().Im.Message.Delete(ctx, larkim.NewDeleteMessageReqBuilder().MessageId(*msg.MessageId).Build())
 				if err != nil {
 					return err
 				}
@@ -260,17 +256,17 @@ func DebugRevertHandler(ctx context.Context, data *larkim.P2MessageReceiveV1, me
 			}
 		}
 	} else if data.Event.Message.ParentId != nil {
-		respMsg := larkutils.GetMsgFullByID(ctx, *data.Event.Message.ParentId)
+		respMsg := larkmsg.GetMsgFullByID(ctx, *data.Event.Message.ParentId)
 		msg := respMsg.Data.Items[0]
 		if msg == nil {
 			res = "没有圈选消息，不能撤回"
 			return errors.New("No parent message found")
 		}
-		if msg.Sender.Id == nil || *msg.Sender.Id != larkconsts.BotAppID {
+		if msg.Sender.Id == nil || *msg.Sender.Id != config.Get().LarkConfig.BotOpenID {
 			res = "消息不是机器人发出的，不能撤回"
 			return errors.New("Parent message is not sent by bot")
 		}
-		resp, err := lark.LarkClient.Im.Message.Delete(ctx, larkim.NewDeleteMessageReqBuilder().MessageId(*data.Event.Message.ParentId).Build())
+		resp, err := lark_dal.Client().Im.Message.Delete(ctx, larkim.NewDeleteMessageReqBuilder().MessageId(*data.Event.Message.ParentId).Build())
 		if err != nil {
 			return err
 		}
@@ -281,7 +277,7 @@ func DebugRevertHandler(ctx context.Context, data *larkim.P2MessageReceiveV1, me
 	return nil
 }
 
-func DebugRepeatHandler(ctx context.Context, data *larkim.P2MessageReceiveV1, metaData *handlerbase.BaseMetaData, args ...string) (err error) {
+func DebugRepeatHandler(ctx context.Context, data *larkim.P2MessageReceiveV1, metaData *xhandler.BaseMetaData, args ...string) (err error) {
 	ctx, span := otel.T().Start(ctx, reflecting.GetCurrentFunc())
 	span.SetAttributes(attribute.Key("event").String(larkcore.Prettify(data)))
 	defer span.End()
@@ -290,7 +286,7 @@ func DebugRepeatHandler(ctx context.Context, data *larkim.P2MessageReceiveV1, me
 	if data.Event.Message.ThreadId != nil {
 		return nil
 	} else if data.Event.Message.ParentId != nil {
-		respMsg := larkutils.GetMsgFullByID(ctx, *data.Event.Message.ParentId)
+		respMsg := larkmsg.GetMsgFullByID(ctx, *data.Event.Message.ParentId)
 		msg := respMsg.Data.Items[0]
 		if msg == nil {
 			return errors.New("No parent message found")
@@ -310,7 +306,7 @@ func DebugRepeatHandler(ctx context.Context, data *larkim.P2MessageReceiveV1, me
 			).
 			ReceiveIdType(larkim.ReceiveIdTypeChatId).
 			Build()
-		resp, err := lark.LarkClient.Im.V1.Message.Create(ctx, repeatReq)
+		resp, err := lark_dal.Client().Im.V1.Message.Create(ctx, repeatReq)
 		if err != nil {
 			return err
 		}
@@ -321,12 +317,12 @@ func DebugRepeatHandler(ctx context.Context, data *larkim.P2MessageReceiveV1, me
 			}
 			return errors.New(resp.Error())
 		}
-		go larkutils.RecordMessage2Opensearch(ctx, resp)
+		go larkmsg.RecordMessage2Opensearch(ctx, resp)
 	}
 	return nil
 }
 
-func DebugImageHandler(ctx context.Context, data *larkim.P2MessageReceiveV1, metaData *handlerbase.BaseMetaData, args ...string) (err error) {
+func DebugImageHandler(ctx context.Context, data *larkim.P2MessageReceiveV1, metaData *xhandler.BaseMetaData, args ...string) (err error) {
 	ctx, span := otel.T().Start(ctx, reflecting.GetCurrentFunc())
 	span.SetAttributes(attribute.Key("event").String(larkcore.Prettify(data)))
 	defer span.End()
@@ -349,34 +345,32 @@ func DebugImageHandler(ctx context.Context, data *larkim.P2MessageReceiveV1, met
 	} else {
 		inputPrompt = input
 	}
-	dataSeq, err := responses.SingleChatStreamingPrompt(
-		ctx,
-		inputPrompt,
-		env.ARK_VISION_EPID,
-		urls...,
-	)
+
+	dataSeq, err := ark_dal.New[*larkim.P2MessageReceiveV1](
+		"chat_id", "user_id", nil,
+	).Do(context.Background(), "", inputPrompt)
 	if err != nil {
 		return err
 	}
-	err = message.SendAndReplyStreamingCard(ctx, data.Event.Message, dataSeq, true)
+	err = larkmsg.SendAndReplyStreamingCard(ctx, data.Event.Message, dataSeq, true)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func DebugConversationHandler(ctx context.Context, data *larkim.P2MessageReceiveV1, metaData *handlerbase.BaseMetaData, args ...string) (err error) {
+func DebugConversationHandler(ctx context.Context, data *larkim.P2MessageReceiveV1, metaData *xhandler.BaseMetaData, args ...string) (err error) {
 	ctx, span := otel.T().Start(ctx, reflecting.GetCurrentFunc())
 	span.SetAttributes(attribute.Key("event").String(larkcore.Prettify(data)))
 	defer span.End()
 	defer func() { span.RecordError(err) }()
 
-	msgs, err := larkutils.GetAllParentMsg(ctx, data)
+	msgs, err := larkmsg.GetAllParentMsg(ctx, data)
 	if err != nil {
 		return err
 	}
 
-	resp, err := opensearchdal.SearchData(ctx, consts.LarkChunkIndex,
+	resp, err := opensearch.SearchData(ctx, config.Get().OpensearchConfig.LarkMsgIndex,
 		map[string]any{
 			"query": map[string]any{
 				"bool": map[string]any{
@@ -397,7 +391,7 @@ func DebugConversationHandler(ctx context.Context, data *larkim.P2MessageReceive
 		return err
 	}
 	for _, hit := range resp.Hits.Hits {
-		chunkLog := &handlertypes.MessageChunkLogV3{}
+		chunkLog := &xmodel.MessageChunkLogV3{}
 		err = sonic.Unmarshal(hit.Source, chunkLog)
 		if err != nil {
 			return err
@@ -412,10 +406,10 @@ func DebugConversationHandler(ctx context.Context, data *larkim.P2MessageReceive
 		if err != nil {
 			return err
 		}
-		tpl := templates.GetTemplateV2(templates.ChunkMetaTemplate) // make sure template is loaded
-		msgLines := commonutils.TransSlice(msgList, func(msg *handlertypes.MessageIndex) *templates.MsgLine {
+		tpl := larktpl.GetTemplateV2[larktpl.ChunkMetaData](ctx, larktpl.ChunkMetaTemplate) // make sure template is loaded
+		msgLines := commonutils.TransSlice(msgList, func(msg *xmodel.MessageIndex) *larktpl.MsgLine {
 			msgTrunc := make([]string, 0)
-			for item := range larkmsgutils.Trans2Item(msg.MessageType, msg.RawMessage) {
+			for item := range larkcontent.Trans2Item(msg.MessageType, msg.RawMessage) {
 				switch item.Tag {
 				case "image", "sticker":
 					msgTrunc = append(msgTrunc, fmt.Sprintf("![something](%s)", item.Content))
@@ -423,38 +417,38 @@ func DebugConversationHandler(ctx context.Context, data *larkim.P2MessageReceive
 					msgTrunc = append(msgTrunc, item.Content)
 				}
 			}
-			return &templates.MsgLine{
+			return &larktpl.MsgLine{
 				Time:    msg.CreateTime,
-				User:    &templates.User{ID: msg.UserID},
+				User:    &larktpl.User{UserID: msg.UserID},
 				Content: strings.Join(msgTrunc, " "),
 			}
 		})
-		slices.SortFunc(msgLines, func(a, b *templates.MsgLine) int {
+		slices.SortFunc(msgLines, func(a, b *larktpl.MsgLine) int {
 			return strings.Compare(a.Time, b.Time)
 		})
-		metaData := &templates.ChunkMetaData{
+		metaData := &larktpl.ChunkMetaData{
 			Summary: chunkLog.Summary,
 
-			Intent: chunking.Translate(chunkLog.Intent),
+			Intent: xchunk.Translate(chunkLog.Intent),
 			Participants: Dedup(
-				commonutils.TransSlice(msgList, func(m *handlertypes.MessageIndex) *templates.User { return &templates.User{ID: m.UserID} }),
-				func(u *templates.User) string { return u.ID },
+				commonutils.TransSlice(msgList, func(m *xmodel.MessageIndex) *larktpl.User { return &larktpl.User{UserID: m.UserID} }),
+				func(u *larktpl.User) string { return u.UserID },
 			),
 
-			Sentiment: chunking.Translate(chunkLog.SentimentAndTone.Sentiment),
-			Tones:     commonutils.TransSlice(chunkLog.SentimentAndTone.Tones, func(tone string) *templates.ToneData { return &templates.ToneData{Tone: chunking.Translate(tone)} }),
-			Questions: commonutils.TransSlice(chunkLog.InteractionAnalysis.UnresolvedQuestions, func(question string) *templates.Questions { return &templates.Questions{Question: question} }),
+			Sentiment: xchunk.Translate(chunkLog.SentimentAndTone.Sentiment),
+			Tones:     commonutils.TransSlice(chunkLog.SentimentAndTone.Tones, func(tone string) *larktpl.ToneData { return &larktpl.ToneData{Tone: xchunk.Translate(tone)} }),
+			Questions: commonutils.TransSlice(chunkLog.InteractionAnalysis.UnresolvedQuestions, func(question string) *larktpl.Questions { return &larktpl.Questions{Question: question} }),
 
 			MsgList: msgLines,
 
 			// PlansAndSuggestion: ,
-			MainTopicsOrActivities:         commonutils.TransSlice(chunkLog.Entities.MainTopicsOrActivities, templates.ToObjTextArray),
-			KeyConceptsAndNouns:            commonutils.TransSlice(chunkLog.Entities.KeyConceptsAndNouns, templates.ToObjTextArray),
-			MentionedGroupsOrOrganizations: commonutils.TransSlice(chunkLog.Entities.MentionedGroupsOrOrganizations, templates.ToObjTextArray),
-			MentionedPeople:                commonutils.TransSlice(chunkLog.Entities.MentionedPeople, templates.ToObjTextArray),
-			LocationsAndVenues:             commonutils.TransSlice(chunkLog.Entities.LocationsAndVenues, templates.ToObjTextArray),
-			MediaAndWorks: commonutils.TransSlice(chunkLog.Entities.MediaAndWorks, func(m *handlertypes.MediaAndWork) *templates.MediaAndWork {
-				return &templates.MediaAndWork{m.Title, m.Type}
+			MainTopicsOrActivities:         commonutils.TransSlice(chunkLog.Entities.MainTopicsOrActivities, larktpl.ToObjTextArray),
+			KeyConceptsAndNouns:            commonutils.TransSlice(chunkLog.Entities.KeyConceptsAndNouns, larktpl.ToObjTextArray),
+			MentionedGroupsOrOrganizations: commonutils.TransSlice(chunkLog.Entities.MentionedGroupsOrOrganizations, larktpl.ToObjTextArray),
+			MentionedPeople:                commonutils.TransSlice(chunkLog.Entities.MentionedPeople, larktpl.ToObjTextArray),
+			LocationsAndVenues:             commonutils.TransSlice(chunkLog.Entities.LocationsAndVenues, larktpl.ToObjTextArray),
+			MediaAndWorks: commonutils.TransSlice(chunkLog.Entities.MediaAndWorks, func(m *xmodel.MediaAndWork) *larktpl.MediaAndWork {
+				return &larktpl.MediaAndWork{m.Title, m.Type}
 			}),
 
 			Timestamp: chunkLog.Timestamp,
@@ -462,8 +456,8 @@ func DebugConversationHandler(ctx context.Context, data *larkim.P2MessageReceive
 		}
 
 		tpl.WithData(metaData)
-		cardContent := templates.NewCardContentV2(ctx, tpl)
-		err = larkutils.ReplyCard(ctx, cardContent, *data.Event.Message.MessageId, "_replyGet", false)
+		cardContent := larktpl.NewCardContentV2[larktpl.ChunkMetaData](ctx, tpl.TemplateID)
+		err = larkmsg.ReplyCard(ctx, cardContent, *data.Event.Message.MessageId, "_replyGet", false)
 		if err != nil {
 			return err
 		}
@@ -493,32 +487,32 @@ func Dedup[T, K comparable](slice []T, keyFunc func(T) K) []T {
 	return result
 }
 
-func init() {
-	params := tools.NewParameters("object")
-	fcu := tools.NewFunctionCallUnit().
-		Name("revert_message").Desc("可以撤回指定消息,调用时不需要任何参数，工具会判断要撤回的消息是什么，并且返回撤回的结果。如果不是机器人发出的消息,是不能撤回的").Params(params).Func(revertWrap)
-	tools.M().Add(fcu)
-}
+// func init() {
+// 	params := tools.NewParameters("object")
+// 	fcu := tools.NewFunctionCallUnit().
+// 		Name("revert_message").Desc("可以撤回指定消息,调用时不需要任何参数，工具会判断要撤回的消息是什么，并且返回撤回的结果。如果不是机器人发出的消息,是不能撤回的").Params(params).Func(revertWrap)
+// 	tools.M().Add(fcu)
+// }
 
-func revertWrap(ctx context.Context, meta *tools.FunctionCallMeta, args string) (any, error) {
-	s := struct {
-		Time   string `json:"time"`
-		Cancel bool   `json:"cancel"`
-	}{}
-	err := utility.UnmarshallStringPre(args, &s)
-	if err != nil {
-		return nil, err
-	}
-	argsSlice := make([]string, 0)
-	if s.Cancel {
-		argsSlice = append(argsSlice, "--cancel")
-	}
-	if s.Time != "" {
-		argsSlice = append(argsSlice, "--t="+s.Time)
-	}
-	metaData := handlerbase.NewBaseMetaDataWithChatIDUID(ctx, meta.ChatID, meta.UserID)
-	if err := DebugRevertHandler(ctx, meta.LarkData, metaData, argsSlice...); err != nil {
-		return nil, err
-	}
-	return goption.Of(metaData.GetExtra("revert_result")).ValueOr("执行完成但没有结果"), nil
-}
+// func revertWrap(ctx context.Context, meta *tools.FunctionCallMeta, args string) (any, error) {
+// 	s := struct {
+// 		Time   string `json:"time"`
+// 		Cancel bool   `json:"cancel"`
+// 	}{}
+// 	err := utils.UnmarshalStrPre(args, &s)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	argsSlice := make([]string, 0)
+// 	if s.Cancel {
+// 		argsSlice = append(argsSlice, "--cancel")
+// 	}
+// 	if s.Time != "" {
+// 		argsSlice = append(argsSlice, "--t="+s.Time)
+// 	}
+// 	metaData := xhandler.NewBaseMetaDataWithChatIDUID(ctx, meta.ChatID, meta.UserID)
+// 	if err := DebugRevertHandler(ctx, meta.LarkData, metaData, argsSlice...); err != nil {
+// 		return nil, err
+// 	}
+// 	return goption.Of(metaData.GetExtra("revert_result")).ValueOr("执行完成但没有结果"), nil
+// }

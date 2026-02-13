@@ -7,14 +7,16 @@ import (
 	"strconv"
 	"time"
 
-	handlerbase "github.com/BetaGoRobot/BetaGo/handler/handler_base"
-	"github.com/BetaGoRobot/BetaGo/utility"
-	"github.com/BetaGoRobot/BetaGo/utility/history"
-	"github.com/BetaGoRobot/BetaGo/utility/larkutils"
-	"github.com/BetaGoRobot/BetaGo/utility/larkutils/cardutil"
-	opensearchdal "github.com/BetaGoRobot/BetaGo/utility/opensearch_dal"
-	"github.com/BetaGoRobot/BetaGo/utility/otel"
-	"github.com/BetaGoRobot/BetaGo/utility/vadvisor"
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/application/lark/history"
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/lark_dal/larkchat"
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/lark_dal/larkmsg"
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/lark_dal/larkmsg/larkcard"
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/opensearch"
+
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/otel"
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/vadvisor"
+	"github.com/BetaGoRobot/BetaGo-Redefine/pkg/utils"
+	"github.com/BetaGoRobot/BetaGo-Redefine/pkg/xhandler"
 	"github.com/BetaGoRobot/go_utils/reflecting"
 	"github.com/bytedance/sonic"
 	"github.com/defensestation/osquery"
@@ -31,7 +33,7 @@ import (
 //	@return err error
 //	@author kevinmatthe
 //	@update 2025-05-30 15:19:56
-func TrendHandler(ctx context.Context, data *larkim.P2MessageReceiveV1, metaData *handlerbase.BaseMetaData, args ...string) (err error) {
+func TrendHandler(ctx context.Context, data *larkim.P2MessageReceiveV1, metaData *xhandler.BaseMetaData, args ...string) (err error) {
 	ctx, span := otel.T().Start(ctx, reflecting.GetCurrentFunc())
 	span.SetAttributes(attribute.Key("event").String(larkcore.Prettify(data)))
 	defer span.End()
@@ -107,13 +109,13 @@ func TrendHandler(ctx context.Context, data *larkim.P2MessageReceiveV1, metaData
 				}
 			},
 		)
-		title := fmt.Sprintf("[%s]水群频率表-%ddays", larkutils.GetChatName(ctx, *data.Event.Message.ChatId), days)
-		cardContent := cardutil.NewCardBuildGraphHelper(graph).
+		title := fmt.Sprintf("[%s]水群频率表-%ddays", larkchat.GetChatName(ctx, *data.Event.Message.ChatId), days)
+		cardContent := larkcard.NewCardBuildGraphHelper(graph).
 			SetTitle(title).Build(ctx)
 		if metaData.Refresh {
-			err = larkutils.PatchCard(ctx, cardContent, *data.Event.Message.MessageId)
+			err = larkmsg.PatchCard(ctx, cardContent, *data.Event.Message.MessageId)
 		} else {
-			err = larkutils.ReplyCard(ctx, cardContent, *data.Event.Message.MessageId, "", false)
+			err = larkmsg.ReplyCard(ctx, cardContent, *data.Event.Message.MessageId, "", false)
 		}
 	}
 
@@ -134,7 +136,7 @@ func (h *trendInternalHelper) DrawTrendPie(ctx context.Context, trend history.Tr
 
 	graph := vadvisor.NewPieChartsGraphWithPlayer[string, int64]()
 	for _, item := range trend {
-		t, err := time.ParseInLocation(time.DateTime, item.Time, utility.UTCPlus8Loc())
+		t, err := time.ParseInLocation(time.DateTime, item.Time, utils.UTC8Loc())
 		if err != nil {
 			return err
 		}
@@ -151,15 +153,15 @@ func (h *trendInternalHelper) DrawTrendPie(ctx context.Context, trend history.Tr
 
 	}
 	graph.BuildPlayer(ctx)
-	title := fmt.Sprintf("[%s]水群频率表-%ddays", larkutils.GetChatName(ctx, h.chatID), h.days)
-	cardContent := cardutil.NewCardBuildGraphHelper(graph).
+	title := fmt.Sprintf("[%s]水群频率表-%ddays", larkchat.GetChatName(ctx, h.chatID), h.days)
+	cardContent := larkcard.NewCardBuildGraphHelper(graph).
 		SetStartTime(h.st).
 		SetEndTime(h.et).
 		SetTitle(title).Build(ctx)
 	if reply {
-		return larkutils.ReplyCard(ctx, cardContent, h.msgID, "", false)
+		return larkmsg.ReplyCard(ctx, cardContent, h.msgID, "", false)
 	}
-	return larkutils.PatchCard(ctx, cardContent, h.msgID)
+	return larkmsg.PatchCard(ctx, cardContent, h.msgID)
 }
 
 func (h *trendInternalHelper) DrawTrendBar(ctx context.Context, trend history.TrendSeries, reply bool) (err error) {
@@ -169,7 +171,7 @@ func (h *trendInternalHelper) DrawTrendBar(ctx context.Context, trend history.Tr
 
 	graph := vadvisor.NewBarChartsGraphWithPlayer[string, int64]()
 	for _, item := range trend {
-		t, err := time.ParseInLocation(time.DateTime, item.Time, utility.UTCPlus8Loc())
+		t, err := time.ParseInLocation(time.DateTime, item.Time, utils.UTC8Loc())
 		if err != nil {
 			return err
 		}
@@ -190,15 +192,15 @@ func (h *trendInternalHelper) DrawTrendBar(ctx context.Context, trend history.Tr
 		return cmp.Compare(b.YField, a.YField)
 	})
 	graph.BuildPlayer(ctx)
-	title := fmt.Sprintf("[%s]水群频率表-%ddays", larkutils.GetChatName(ctx, h.chatID), h.days)
-	cardContent := cardutil.NewCardBuildGraphHelper(graph).
+	title := fmt.Sprintf("[%s]水群频率表-%ddays", larkchat.GetChatName(ctx, h.chatID), h.days)
+	cardContent := larkcard.NewCardBuildGraphHelper(graph).
 		SetStartTime(h.st).
 		SetEndTime(h.et).
 		SetTitle(title).Build(ctx)
 	if reply {
-		return larkutils.ReplyCard(ctx, cardContent, h.msgID, "", false)
+		return larkmsg.ReplyCard(ctx, cardContent, h.msgID, "", false)
 	}
-	return larkutils.PatchCard(ctx, cardContent, h.msgID)
+	return larkmsg.PatchCard(ctx, cardContent, h.msgID)
 }
 
 func (h *trendInternalHelper) TrendByUser(ctx context.Context) (trend history.TrendSeries, err error) {
@@ -240,7 +242,7 @@ func (h *trendInternalHelper) TrendRate(ctx context.Context, indexName, field st
 			),
 	).Size(0).Aggs(osquery.TermsAgg("dimension", field).Size(size))
 
-	resp, err := opensearchdal.
+	resp, err := opensearch.
 		SearchData(
 			ctx,
 			indexName,

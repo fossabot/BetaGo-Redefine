@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	"github.com/BetaGoRobot/BetaGo-Redefine/pkg/logs"
-	"github.com/BetaGoRobot/BetaGo/consts"
-	handlerbase "github.com/BetaGoRobot/BetaGo/handler/handler_base"
+	"github.com/BetaGoRobot/BetaGo-Redefine/pkg/xerror"
+	"github.com/BetaGoRobot/BetaGo-Redefine/pkg/xhandler"
 	"github.com/BetaGoRobot/go_utils/reflecting"
 	"go.uber.org/zap"
 )
@@ -17,7 +17,7 @@ import (
 //
 //	@author heyuhengmatt
 //	@update 2024-07-18 04:43:42
-type CommandFunc[T any] func(ctx context.Context, data T, metaData *handlerbase.BaseMetaData, args ...string) (err error)
+type CommandFunc[T any] func(ctx context.Context, data T, metaData *xhandler.BaseMetaData, args ...string) (err error)
 
 // Command Repeat
 //
@@ -38,7 +38,7 @@ type Command[T any] struct {
 //	@return Execute
 //	@author heyuhengmatt
 //	@update 2024-07-18 05:30:21
-func (c *Command[T]) Execute(ctx context.Context, data T, metaData *handlerbase.BaseMetaData, args []string) error {
+func (c *Command[T]) Execute(ctx context.Context, data T, metaData *xhandler.BaseMetaData, args []string) error {
 	l := logs.L().Ctx(ctx).With(zap.String("command_name", c.Name), zap.Strings("args", args), zap.Any("meta", metaData))
 	l.Debug("Executing On Command")
 	if c.Func != nil { // 当前Command有执行方法，直接执行
@@ -46,23 +46,23 @@ func (c *Command[T]) Execute(ctx context.Context, data T, metaData *handlerbase.
 		return c.Func(ctx, data, metaData, args...)
 	}
 	if len(args) == 0 { // 无执行方法且无后续参数
-		return fmt.Errorf("%w: %s", consts.ErrCommandIncomplete, c.FormatUsage())
+		return fmt.Errorf("%w: %s", xerror.ErrCommandIncomplete, c.FormatUsage())
 	}
 
 	if subcommand, ok := c.SubCommands[args[0]]; ok {
 		if usage, ok := subcommand.CheckUsage(args[1:]...); ok {
-			return fmt.Errorf("%w: %s", consts.ErrCheckUsage, usage)
+			return fmt.Errorf("%w: %s", xerror.ErrCheckUsage, usage)
 		}
 		err := subcommand.Execute(ctx, data, metaData, args[1:])
-		if err != nil && err == consts.ErrArgsIncompelete {
-			return fmt.Errorf("%w: %s", consts.ErrArgsIncompelete, subcommand.FormatUsage())
+		if err != nil && err == xerror.ErrArgsIncompelete {
+			return fmt.Errorf("%w: %s", xerror.ErrArgsIncompelete, subcommand.FormatUsage())
 		}
 		return err
 	}
 
 	return fmt.Errorf(
 		"%w: Command <b>%s</b> not found, available sub-commands: %s",
-		consts.ErrCommandNotFound,
+		xerror.ErrCommandNotFound,
 		args[0],
 		fmt.Sprintf(" [%s]", strings.Join(c.GetSubCommands(), ", ")),
 	)

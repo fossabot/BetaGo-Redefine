@@ -13,14 +13,54 @@ var config *BaseConfig
 type BaseConfig struct {
 	// NOTE: 强依赖
 	// 关系数据库
-	DBConfig         *DBConfig         `json:"db_config" yaml:"db_config" toml:"db_config"`
-	OtelConfig       *OtelConfig       `json:"otel_config" yaml:"otel_config" toml:"otel_config"`
-	OpensearchConfig *OpensearchConfig `json:"opensearch_config" yaml:"opensearch_config" toml:"opensearch_config"`
-	LarkConfig       *LarkConfig       `json:"lark_config" yaml:"lark_config" toml:"lark_config"`
-	MinioConfig      *MinioConfig      `json:"minio_config" yaml:"minio_config" toml:"minio_config"`
-	ArkConfig        *ArkConfig        `json:"ark_config" yaml:"ark_config" toml:"ark_config"`
+	BaseInfo           *BaseInfo           `json:"base_info" yaml:"base_info" toml:"base_info"`
+	DBConfig           *DBConfig           `json:"db_config" yaml:"db_config" toml:"db_config"`
+	OtelConfig         *OtelConfig         `json:"otel_config" yaml:"otel_config" toml:"otel_config"`
+	OpensearchConfig   *OpensearchConfig   `json:"opensearch_config" yaml:"opensearch_config" toml:"opensearch_config"`
+	LarkConfig         *LarkConfig         `json:"lark_config" yaml:"lark_config" toml:"lark_config"`
+	MinioConfig        *MinioConfig        `json:"minio_config" yaml:"minio_config" toml:"minio_config"`
+	ArkConfig          *ArkConfig          `json:"ark_config" yaml:"ark_config" toml:"ark_config"`
+	NeteaseMusicConfig *NeteaseMusicConfig `json:"netease_music_config" yaml:"netease_music_config" toml:"netease_music_config"`
+	RateConfig         *RateConfig         `json:"rate_config" yaml:"rate_config" toml:"rate_config"`
+	ProxyConfig        *ProxyConfig        `json:"proxy_config" yaml:"proxy_config" toml:"proxy_config"`
+	AKToolConfig       *AKToolConfig       `json:"aktool_config" yaml:"aktool_config" toml:"aktool_config"`
+	GotifyConfig       *GotifyConfig       `json:"gotify_config" yaml:"gotify_config" toml:"gotify_config"`
+	RedisConfig        *RedisConfig        `json:"redis_config" yaml:"redis_config" toml:"redis_config"`
 }
 
+type RedisConfig struct {
+	Addr     string `json:"addr" yaml:"addr" toml:"addr"`
+	Password string `json:"password" yaml:"password" toml:"password"`
+	DB       int    `json:"db" yaml:"db" toml:"db"`
+}
+
+type BaseInfo struct {
+	RobotName string `json:"robot_name" yaml:"robot_name" toml:"robot_name"`
+}
+
+type GotifyConfig struct {
+	URL              string `json:"url" yaml:"url" toml:"url"`
+	ApplicationToken string `json:"application_token" yaml:"application_token" toml:"application_token"`
+}
+
+type AKToolConfig struct {
+	BaseURL string `json:"base_url" yaml:"base_url" toml:"base_url"`
+}
+type NeteaseMusicConfig struct {
+	BaseURL           string `json:"base_url" yaml:"base_url" toml:"base_url"`
+	MusicCardInThread bool   `json:"music_card_in_thread" yaml:"music_card_in_thread" toml:"music_card_in_thread"`
+	UserName          string `json:"user_name" yaml:"user_name" toml:"user_name"`
+	PassWord          string `json:"pass_word" yaml:"pass_word" toml:"pass_word"`
+}
+
+type ProxyConfig struct {
+	PrivateProxy string `json:"private_proxy" yaml:"private_proxy" toml:"private_proxy"`
+}
+type RateConfig struct {
+	ReactionDefaultRate int `json:"reaction_default_rate" yaml:"reaction_default_rate" toml:"reaction_default_rate"`
+	RepeatDefaultRate   int `json:"repeat_default_rate" yaml:"repeat_default_rate" toml:"repeat_default_rate"`
+	ImitateDefaultRate  int `json:"imitate_default_rate" yaml:"imitate_default_rate" toml:"imitate_default_rate"`
+}
 type DBConfig struct {
 	Host            string `json:"host" yaml:"host" toml:"host"`
 	Port            int    `json:"port" yaml:"port" toml:"port"`
@@ -98,6 +138,9 @@ func LoadFile(path string) *BaseConfig {
 }
 
 func Get() *BaseConfig {
+	if config == nil {
+		config = LoadFile(os.Getenv("BETAGO_CONFIG_PATH"))
+	}
 	return config
 }
 

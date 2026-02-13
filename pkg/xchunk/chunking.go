@@ -13,15 +13,16 @@ import (
 	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/ark_dal"
 	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/config"
 	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/db/query"
-	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/lark_dal/msg"
 	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/opensearch"
+	redis_dal "github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/redis"
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/xmodel"
 	"github.com/BetaGoRobot/BetaGo-Redefine/pkg/logs"
 	"github.com/BetaGoRobot/BetaGo-Redefine/pkg/utils"
 	"github.com/bytedance/gg/gptr"
 	"github.com/bytedance/sonic"
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 
-	redis_client "github.com/BetaGoRobot/BetaGo/utility/redis" // Renamed to avoid conflict with package name
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 	"github.com/redis/go-redis/v9"
 	uuid "github.com/satori/go.uuid"
@@ -111,7 +112,7 @@ type (
 // getTimestampFunc: A function to extract the Unix timestamp from a message.
 func NewManagement() *Management {
 	return &Management{
-		redisClient:     redis_client.GetRedisClient(),
+		redisClient:     redis_dal.GetRedisClient(),
 		processingQueue: make(chan *Chunk, 100), // Buffered channel for processing chunks
 	}
 }
@@ -212,7 +213,7 @@ func (m *Management) OnMerge(ctx context.Context, chunk *Chunk) (err error) {
 	// Note: It's better to fetch templates once, not on every merge. This is kept as per the original code.
 	ins := query.Q.PromptTemplateArg
 	templates, err := ins.WithContext(ctx).Where(ins.PromptID.Eq(3)).First()
-	if err != nil {
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return fmt.Errorf("prompt template with ID 3 not found: %w", err)
 	}
 	promptTemplateStr := templates.TemplateStr
@@ -234,7 +235,7 @@ func (m *Management) OnMerge(ctx context.Context, chunk *Chunk) (err error) {
 	res = strings.TrimLeft(res, "json")
 	logs.L().Ctx(ctx).Info("OnMerge chunk processed by LLM", zap.String("groupID", chunk.GroupID), zap.String("chunkStr", chunkStr), zap.String("res", res))
 
-	chunkLog := &msg.MessageChunkLogV3{
+	chunkLog := &xmodel.MessageChunkLogV3{
 		ID:          uuid.NewV1().String(),
 		Timestamp:   utils.UTC8Time().Format(time.RFC3339),
 		TimestampV2: gptr.Of(utils.UTC8Time().Format(time.RFC3339)),
@@ -389,7 +390,7 @@ func Normalize(vec []float32) []float32 {
 }
 
 // BuildEmbeddingInput 函数接收一个更新后的对话文档，然后构建一个高质量的字符串用于生成embedding。
-func BuildEmbeddingInput(doc *msg.MessageChunkLogV3) string {
+func BuildEmbeddingInput(doc *xmodel.MessageChunkLogV3) string {
 	// 使用 strings.Builder 来高效地拼接字符串
 	var builder strings.Builder
 

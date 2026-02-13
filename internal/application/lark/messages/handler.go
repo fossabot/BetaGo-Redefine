@@ -9,10 +9,9 @@ import (
 	"github.com/BetaGoRobot/BetaGo-Redefine/internal/application/lark/messages/ops"
 	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/ark_dal"
 	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/config"
-	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/db/model"
-	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/lark_dal"
-	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/lark_dal/msg"
-	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/lark_dal/user"
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/lark_dal/larkchat"
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/lark_dal/larkmsg"
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/lark_dal/larkuser"
 	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/opensearch"
 	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/otel"
 	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/retriver"
@@ -22,9 +21,9 @@ import (
 	"github.com/BetaGoRobot/BetaGo-Redefine/pkg/xhandler"
 
 	"github.com/BetaGoRobot/go_utils/reflecting"
-	"github.com/kevinmatthe/gojieba"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 	"github.com/tmc/langchaingo/schema"
+	"github.com/yanyiwu/gojieba"
 	"go.uber.org/zap"
 )
 
@@ -37,7 +36,7 @@ type (
 )
 
 func larkDeferFunc(ctx context.Context, err error, event *larkim.P2MessageReceiveV1, metaData *xhandler.BaseMetaData) {
-	lark_dal.SendRecoveredMsg(ctx, err, *event.Event.Message.MessageId)
+	larkmsg.SendRecoveredMsg(ctx, err, *event.Event.Message.MessageId)
 }
 
 func CollectMessage(ctx context.Context, event *larkim.P2MessageReceiveV1, metaData *xhandler.BaseMetaData) {
@@ -45,12 +44,12 @@ func CollectMessage(ctx context.Context, event *larkim.P2MessageReceiveV1, metaD
 		ctx, span := otel.T().Start(ctx, reflecting.GetCurrentFunc())
 		defer span.End()
 
-		chatID, err := lark_dal.GetChatIDFromMsgID(ctx, *event.Event.Message.MessageId)
+		chatID, err := larkmsg.GetChatIDFromMsgID(ctx, *event.Event.Message.MessageId)
 		if err != nil {
 			return
 		}
 
-		userInfo, err := user.GetUserInfoCache(ctx, *event.Event.Message.ChatId, *event.Event.Sender.SenderId.OpenId)
+		userInfo, err := larkuser.GetUserInfoCache(ctx, *event.Event.Message.ChatId, *event.Event.Sender.SenderId.OpenId)
 		if err != nil {
 			return
 		}
@@ -60,7 +59,7 @@ func CollectMessage(ctx context.Context, event *larkim.P2MessageReceiveV1, metaD
 		} else {
 			userName = *userInfo.Name
 		}
-		msgLog := &model.MessageLog{
+		msgLog := &xmodel.MessageLog{
 			MessageID:   utils.AddrOrNil(event.Event.Message.MessageId),
 			RootID:      utils.AddrOrNil(event.Event.Message.RootId),
 			ParentID:    utils.AddrOrNil(event.Event.Message.ParentId),
@@ -74,7 +73,7 @@ func CollectMessage(ctx context.Context, event *larkim.P2MessageReceiveV1, metaD
 			Content:     utils.AddrOrNil(event.Event.Message.Content),
 			TraceID:     span.SpanContext().TraceID().String(),
 		}
-		content := msg.PreGetTextMsg(ctx, event)
+		content := larkmsg.PreGetTextMsg(ctx, event)
 		embedded, usage, err := ark_dal.EmbeddingText(ctx, content)
 		if err != nil {
 			logs.L().Ctx(ctx).Error("EmbeddingText error", zap.Error(err))
@@ -98,7 +97,7 @@ func CollectMessage(ctx context.Context, event *larkim.P2MessageReceiveV1, metaD
 			ctx, config.Get().OpensearchConfig.LarkMsgIndex, *event.Event.Message.MessageId,
 			&xmodel.MessageIndex{
 				MessageLog:           msgLog,
-				ChatName:             lark_dal.GetChatName(ctx, chatID),
+				ChatName:             larkchat.GetChatName(ctx, chatID),
 				RawMessage:           content,
 				RawMessageJieba:      strings.Join(ws, " "),
 				RawMessageJiebaArray: ws,

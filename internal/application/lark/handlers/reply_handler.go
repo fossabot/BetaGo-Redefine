@@ -6,20 +6,23 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/BetaGoRobot/BetaGo/consts"
-	handlerbase "github.com/BetaGoRobot/BetaGo/handler/handler_base"
-	"github.com/BetaGoRobot/BetaGo/utility/database"
-	"github.com/BetaGoRobot/BetaGo/utility/larkutils"
-	"github.com/BetaGoRobot/BetaGo/utility/larkutils/larkimg"
-	"github.com/BetaGoRobot/BetaGo/utility/larkutils/templates"
-	"github.com/BetaGoRobot/BetaGo/utility/logs"
-	"github.com/BetaGoRobot/BetaGo/utility/otel"
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/db/model"
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/db/query"
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/lark_dal/larkimg"
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/lark_dal/larkmsg"
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/lark_dal/larkmsg/larktpl"
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/otel"
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/xmodel"
+	"github.com/BetaGoRobot/BetaGo-Redefine/pkg/logs"
+	"github.com/BetaGoRobot/BetaGo-Redefine/pkg/xerror"
+	"github.com/BetaGoRobot/BetaGo-Redefine/pkg/xhandler"
 	"github.com/BetaGoRobot/go_utils/reflecting"
 	"github.com/bytedance/sonic"
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 	"go.opentelemetry.io/otel/attribute"
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
@@ -31,7 +34,7 @@ import (
 //	@return error
 //	@author heyuhengmatt
 //	@update 2024-08-06 08:27:18
-func ReplyAddHandler(ctx context.Context, data *larkim.P2MessageReceiveV1, metaData *handlerbase.BaseMetaData, args ...string) (err error) {
+func ReplyAddHandler(ctx context.Context, data *larkim.P2MessageReceiveV1, metaData *xhandler.BaseMetaData, args ...string) (err error) {
 	ctx, span := otel.T().Start(ctx, reflecting.GetCurrentFunc())
 	defer span.End()
 
@@ -52,21 +55,21 @@ func ReplyAddHandler(ctx context.Context, data *larkim.P2MessageReceiveV1, metaD
 			return errors.New("arg word is empty, please change your key word")
 		}
 
-		if matchType != string(consts.MatchTypeSubStr) && matchType != string(consts.MatchTypeRegex) && matchType != string(consts.MatchTypeFull) {
+		if matchType != string(xmodel.MatchTypeSubStr) && matchType != string(xmodel.MatchTypeRegex) && matchType != string(xmodel.MatchTypeFull) {
 			return errors.New("type must be substr, regex or full")
 		}
 		replyType, ok := argMap["reply_type"]
 		if !ok {
-			replyType = string(consts.ReplyTypeText)
+			replyType = string(xmodel.ReplyTypeText)
 		}
 
 		var reply string
 
-		if replyType == string(consts.ReplyTypeImg) { // 图片类型，需要回复图片
+		if replyType == string(xmodel.ReplyTypeImg) { // 图片类型，需要回复图片
 			if data.Event.Message.ParentId == nil {
 				return errors.New("reply_type **img** must reply to a image message")
 			}
-			parentMsg := larkutils.GetMsgFullByID(ctx, *data.Event.Message.ParentId)
+			parentMsg := larkmsg.GetMsgFullByID(ctx, *data.Event.Message.ParentId)
 			if len(parentMsg.Data.Items) != 0 {
 				parentMsgItem := parentMsg.Data.Items[0]
 				contentMap := make(map[string]string)
@@ -78,19 +81,27 @@ func ReplyAddHandler(ctx context.Context, data *larkim.P2MessageReceiveV1, metaD
 				switch *parentMsgItem.MsgType {
 				case larkim.MsgTypeSticker:
 					imgKey := contentMap["file_key"]
-					res, _ := database.FindByCacheFunc(database.StickerMapping{StickerKey: imgKey}, func(r database.StickerMapping) string { return r.StickerKey })
-					if len(res) == 0 {
+					ins := query.Q.StickerMapping
+					res, err := ins.WithContext(ctx).Where(ins.StickerKey.Eq(imgKey)).First()
+					if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+						return err
+					}
+					if res == nil {
 						if stickerFile, err := larkimg.GetMsgImages(ctx, *data.Event.Message.ParentId, contentMap["file_key"], "image"); err != nil {
 							logs.L().Ctx(ctx).Warn("repeatMessage", zap.Error(err))
 						} else {
 							newImgKey := larkimg.UploadPicture2LarkReader(ctx, stickerFile)
-							database.GetDbConnection().Clauses(clause.OnConflict{UpdateAll: true}).Create(&database.StickerMapping{
+							ins := query.Q.StickerMapping
+							err = ins.WithContext(ctx).Clauses(clause.OnConflict{UpdateAll: true}).Create(&model.StickerMapping{
 								StickerKey: imgKey,
 								ImageKey:   newImgKey,
 							})
+							if err != nil {
+								return err
+							}
 						}
 					}
-					reply = imgKey
+					reply = res.ImageKey
 				case larkim.MsgTypeImage:
 					imageFile, err := larkimg.GetMsgImages(ctx, *data.Event.Message.ParentId, contentMap["image_key"], "image")
 					if err != nil {
@@ -108,22 +119,21 @@ func ReplyAddHandler(ctx context.Context, data *larkim.P2MessageReceiveV1, metaD
 			}
 		}
 
-		if result := database.GetDbConnection().
-			Create(&database.QuoteReplyMsgCustom{
+		ins := query.Q.QuoteReplyMsgCustom
+		if err := ins.WithContext(ctx).
+			Create(&model.QuoteReplyMsgCustom{
 				GuildID:   *data.Event.Message.ChatId,
-				MatchType: consts.WordMatchType(matchType),
+				MatchType: string(xmodel.WordMatchType(matchType)),
 				Keyword:   word,
-				ReplyNType: database.ReplyNType{
-					Reply:     reply,
-					ReplyType: consts.ReplyType(replyType),
-				},
-			}); result.Error != nil {
-			return result.Error
+				Reply:     reply,
+				ReplyType: replyType,
+			}); err != nil {
+			return err
 		}
-		larkutils.ReplyMsgText(ctx, "回复语句添加成功", *data.Event.Message.MessageId, "_replyAdd", false)
+		larkmsg.ReplyMsgText(ctx, "回复语句添加成功", *data.Event.Message.MessageId, "_replyAdd", false)
 		return nil
 	}
-	return consts.ErrArgsIncompelete
+	return xerror.ErrArgsIncompelete
 }
 
 // ReplyGetHandler to be filled
@@ -132,7 +142,7 @@ func ReplyAddHandler(ctx context.Context, data *larkim.P2MessageReceiveV1, metaD
 //	@param data *larkim.P2MessageReceiveV1
 //	@param args ...string
 //	@return error
-func ReplyGetHandler(ctx context.Context, data *larkim.P2MessageReceiveV1, metaData *handlerbase.BaseMetaData, args ...string) (err error) {
+func ReplyGetHandler(ctx context.Context, data *larkim.P2MessageReceiveV1, metaData *xhandler.BaseMetaData, args ...string) (err error) {
 	ctx, span := otel.T().Start(ctx, reflecting.GetCurrentFunc())
 	span.SetAttributes(attribute.Key("event").String(larkcore.Prettify(data)))
 	defer span.End()
@@ -142,11 +152,14 @@ func ReplyGetHandler(ctx context.Context, data *larkim.P2MessageReceiveV1, metaD
 	ChatID := *data.Event.Message.ChatId
 
 	lines := make([]map[string]string, 0)
-	resListCustom, hitCache := database.FindByCacheFunc(database.QuoteReplyMsgCustom{GuildID: ChatID}, func(r database.QuoteReplyMsgCustom) string { return r.GuildID })
-	span.SetAttributes(attribute.Key("hitCache").Bool(hitCache))
+	ins := query.Q.QuoteReplyMsgCustom
+	resListCustom, err := ins.WithContext(ctx).Where(ins.GuildID.Eq(ChatID)).Find()
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
+	}
 	for _, res := range resListCustom {
 		if res.GuildID == ChatID {
-			if res.ReplyType == consts.ReplyTypeImg {
+			if res.ReplyType == larkim.MsgTypeImage {
 				if strings.HasPrefix(res.Reply, "img") {
 					res.Reply = fmt.Sprintf("![picture](%s)", res.Reply)
 				} else {
@@ -161,10 +174,13 @@ func ReplyGetHandler(ctx context.Context, data *larkim.P2MessageReceiveV1, metaD
 			})
 		}
 	}
-	resListGlobal, hitCache := database.FindByCacheFunc(database.QuoteReplyMsg{}, func(r database.QuoteReplyMsg) string { return "" })
-	span.SetAttributes(attribute.Key("hitCache").Bool(hitCache))
+	ins2 := query.Q.QuoteReplyMsg
+	resListGlobal, err := ins2.WithContext(ctx).Find()
+	if err != nil {
+		return err
+	}
 	for _, res := range resListGlobal {
-		if res.ReplyType == consts.ReplyTypeImg {
+		if string(res.ReplyType) == larkim.MsgTypeImage {
 			if strings.HasPrefix(res.Reply, "img") {
 				res.Reply = fmt.Sprintf("![picture](%s)", res.Reply)
 			} else {
@@ -178,9 +194,9 @@ func ReplyGetHandler(ctx context.Context, data *larkim.P2MessageReceiveV1, metaD
 			"title4": string(res.MatchType),
 		})
 	}
-	cardContent := templates.NewCardContent(
+	cardContent := larktpl.NewCardContent(
 		ctx,
-		templates.FourColSheetTemplate,
+		larktpl.FourColSheetTemplate,
 	).
 		AddVariable("title1", "Scope").
 		AddVariable("title2", "Keyword").
@@ -188,7 +204,7 @@ func ReplyGetHandler(ctx context.Context, data *larkim.P2MessageReceiveV1, metaD
 		AddVariable("title4", "MatchType").
 		AddVariable("table_raw_array_1", lines)
 
-	err = larkutils.ReplyCard(ctx, cardContent, *data.Event.Message.MessageId, "_replyGet", false)
+	err = larkmsg.ReplyCard(ctx, cardContent, *data.Event.Message.MessageId, "_replyGet", false)
 	if err != nil {
 		return err
 	}

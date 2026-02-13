@@ -7,22 +7,23 @@ import (
 
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 
 	"github.com/BetaGoRobot/BetaGo-Redefine/internal/application/lark/command"
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/application/lark/handlers"
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/config"
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/db/query"
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/lark_dal"
+	redis_dal "github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/redis"
+
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/lark_dal/larkmsg"
 	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/otel"
 	"github.com/BetaGoRobot/BetaGo-Redefine/pkg/logs"
+	"github.com/BetaGoRobot/BetaGo-Redefine/pkg/utils"
+	"github.com/BetaGoRobot/BetaGo-Redefine/pkg/xerror"
 	"github.com/BetaGoRobot/BetaGo-Redefine/pkg/xhandler"
-	"github.com/BetaGoRobot/BetaGo/consts"
-	"github.com/BetaGoRobot/BetaGo/dal/lark"
-	"github.com/BetaGoRobot/BetaGo/handler/larkhandler/lark_command/handlers"
-	"github.com/BetaGoRobot/BetaGo/utility"
-	"github.com/BetaGoRobot/BetaGo/utility/database"
-	"github.com/BetaGoRobot/BetaGo/utility/larkutils"
-	"github.com/BetaGoRobot/BetaGo/utility/larkutils/larkmsgutils"
-	"github.com/BetaGoRobot/BetaGo/utility/redis"
 	"github.com/BetaGoRobot/go_utils/reflecting"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
-	"go.opentelemetry.io/otel/attribute"
 )
 
 var _ Op = &RepeatMsgOperator{}
@@ -51,18 +52,15 @@ func (r *RepeatMsgOperator) PreRun(ctx context.Context, event *larkim.P2MessageR
 	ctx, span := otel.T().Start(ctx, reflecting.GetCurrentFunc())
 	defer span.End()
 	defer func() { span.RecordError(err) }()
-	// 先判断群聊的功能启用情况
-	// if !larkutils.CheckFunctionEnabling(*event.Event.Message.ChatId, consts.LarkFunctionRandomRepeat) {
-	// 	return errors.Wrap(consts.ErrStageSkip, "RepeatMsgOperator: Not enabled")
-	// }
-	if command.LarkRootCommand.IsCommand(ctx, larkutils.PreGetTextMsg(ctx, event)) {
-		return errors.Wrap(consts.ErrStageSkip, r.Name()+" Not Mentioned")
+
+	if command.LarkRootCommand.IsCommand(ctx, larkmsg.PreGetTextMsg(ctx, event)) {
+		return errors.Wrap(xerror.ErrStageSkip, r.Name()+" Not Mentioned")
 	}
-	if ext, err := redis.GetRedisClient().
+	if ext, err := redis_dal.GetRedisClient().
 		Exists(ctx, handlers.MuteRedisKeyPrefix+*event.Event.Message.ChatId).Result(); err != nil {
 		return err
 	} else if ext != 0 {
-		return errors.Wrap(consts.ErrStageSkip, "RepeatMsgOperator: Muted")
+		return errors.Wrap(xerror.ErrStageSkip, "RepeatMsgOperator: Muted")
 	}
 	return
 }
@@ -82,52 +80,47 @@ func (r *RepeatMsgOperator) Run(ctx context.Context, event *larkim.P2MessageRece
 	defer func() { span.RecordError(err) }()
 
 	// Repeat
-	msg := larkutils.PreGetTextMsg(ctx, event)
+	msg := larkmsg.PreGetTextMsg(ctx, event)
 
 	// 开始摇骰子, 默认概率10%
-	realRate := utility.MustAtoI(utility.GetEnvWithDefault("REPEAT_DEFAULT_RATE", "10"))
+	realRate := config.Get().RateConfig.RepeatDefaultRate
 	// 群聊定制化
-	config, hitCache := database.FindByCacheFunc(
-		database.RepeatWordsRateCustom{
-			GuildID: *event.Event.Message.ChatId,
-			Word:    msg,
-		},
-		func(d database.RepeatWordsRateCustom) string {
-			return d.GuildID + d.Word
-		},
-	)
-	span.SetAttributes(attribute.Bool("RepeatWordsRateCustom hitCache", hitCache))
-
-	if len(config) != 0 {
-		realRate = config[0].Rate
+	ins := query.Q.RepeatWordsRateCustom
+	config, err := ins.WithContext(ctx).Where(
+		query.RepeatWordsRateCustom.GuildID.Eq(*event.Event.Message.ChatId),
+		query.RepeatWordsRateCustom.Word.Eq(msg),
+	).First()
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
+	}
+	if config != nil {
+		realRate = int(config.Rate)
 	} else {
-		config, hitCache := database.FindByCacheFunc(
-			database.RepeatWordsRate{
-				Word: msg,
-			},
-			func(d database.RepeatWordsRate) string {
-				return d.Word
-			},
-		)
-		span.SetAttributes(attribute.Bool("RepeatWordsRate hitCache", hitCache))
-		if len(config) != 0 {
-			realRate = config[0].Rate
+		ins := query.Q.RepeatWordsRate
+		config, err := ins.WithContext(ctx).Where(
+			query.RepeatWordsRate.Word.Eq(msg),
+		).First()
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		if config != nil {
+			realRate = int(config.Rate)
 		}
 	}
 
-	if utility.Probability(float64(realRate) / 100) {
+	if utils.Prob(float64(realRate) / 100) {
 		msgType := strings.ToLower(*event.Event.Message.MessageType)
 		if msgType == "text" {
-			m, err := utility.JSON2Map(*event.Event.Message.Content)
+			m, err := utils.JSON2Map(*event.Event.Message.Content)
 			if err != nil {
 				return err
 			}
 			for _, mention := range event.Event.Message.Mentions {
-				m["text"] = strings.ReplaceAll(m["text"].(string), *mention.Key, larkmsgutils.AtUser(*mention.Id.OpenId, *mention.Name))
+				m["text"] = strings.ReplaceAll(m["text"].(string), *mention.Key, larkmsg.AtUser(*mention.Id.OpenId, *mention.Name))
 			}
-			err = larkutils.CreateMsgTextRaw(
+			err = larkmsg.CreateMsgTextRaw(
 				ctx,
-				utility.MustMashal(m),
+				utils.MustMarshalString(m),
 				*event.Event.Message.MessageId,
 				*event.Event.Message.ChatId,
 			)
@@ -145,7 +138,7 @@ func (r *RepeatMsgOperator) Run(ctx context.Context, event *larkim.P2MessageRece
 				).
 				ReceiveIdType(larkim.ReceiveIdTypeChatId).
 				Build()
-			resp, err := lark.LarkClient.Im.V1.Message.Create(ctx, repeatReq)
+			resp, err := lark_dal.Client().Im.V1.Message.Create(ctx, repeatReq)
 			if err != nil {
 				return err
 			}
@@ -156,7 +149,7 @@ func (r *RepeatMsgOperator) Run(ctx context.Context, event *larkim.P2MessageRece
 				}
 				return errors.New(resp.Error())
 			}
-			go larkutils.RecordMessage2Opensearch(ctx, resp)
+			go larkmsg.RecordMessage2Opensearch(ctx, resp)
 		}
 	}
 	return

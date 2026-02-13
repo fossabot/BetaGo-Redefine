@@ -7,11 +7,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/config"
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/lark_dal/larkmsg/larkcontent"
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/lark_dal/larkuser"
 	"github.com/BetaGoRobot/BetaGo-Redefine/pkg/logs"
-	"github.com/BetaGoRobot/BetaGo/utility"
-	"github.com/BetaGoRobot/BetaGo/utility/larkutils/larkconsts"
-	"github.com/BetaGoRobot/BetaGo/utility/larkutils/larkmsgutils"
-	"github.com/BetaGoRobot/BetaGo/utility/larkutils/userutil"
+	"github.com/BetaGoRobot/BetaGo-Redefine/pkg/utils"
 	"github.com/bytedance/sonic"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 	"go.uber.org/zap"
@@ -42,7 +42,7 @@ func (m *LarkMessageEvent) BuildLine() (line string) {
 	mentions := m.Event.Message.Mentions
 
 	tmpList := make([]string, 0)
-	for msgItem := range larkmsgutils.
+	for msgItem := range larkcontent.
 		GetContentItemsSeq(
 			&larkim.EventMessage{
 				Content:     m.Event.Message.Content,
@@ -76,10 +76,10 @@ func (m *LarkMessageEvent) BuildLine() (line string) {
 		}
 	}
 	userName := ""
-	if *m.Event.Sender.SenderId.OpenId == larkconsts.BotAppID {
+	if *m.Event.Sender.SenderId.OpenId == config.Get().LarkConfig.BotOpenID {
 		userName = "机器人"
 	} else {
-		userInfo, err := userutil.GetUserInfoCache(context.Background(), *m.Event.Message.ChatId, *m.Event.Sender.SenderId.OpenId)
+		userInfo, err := larkuser.GetUserInfoCache(context.Background(), *m.Event.Message.ChatId, *m.Event.Sender.SenderId.OpenId)
 		if err != nil {
 			logs.L().Ctx(context.Background()).Error("got error openID", zap.Error(err))
 		}
@@ -90,6 +90,6 @@ func (m *LarkMessageEvent) BuildLine() (line string) {
 		}
 	}
 
-	createTime := time.UnixMilli(m.TimeStamp()).In(utility.UTCPlus8Loc()).Format(time.DateTime)
+	createTime := time.UnixMilli(m.TimeStamp()).In(utils.UTC8Loc()).Format(time.DateTime)
 	return fmt.Sprintf("[%s](%s) <%s>: %s", createTime, *m.Event.Sender.SenderId.OpenId, userName, strings.Join(tmpList, ";"))
 }

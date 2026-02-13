@@ -1,7 +1,6 @@
 package db
 
 import (
-	"strconv"
 	"time"
 
 	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/config"
@@ -10,7 +9,6 @@ import (
 	"github.com/jinzhu/copier"
 	"go.uber.org/zap"
 	"gorm.io/driver/postgres"
-	"gorm.io/gen"
 	"gorm.io/gorm"
 	"gorm.io/gorm/callbacks"
 )
@@ -62,39 +60,4 @@ func callbackAfter(d *gorm.DB) {
 	sql := d.Statement.SQL.String()
 	result := d.Statement.Dest
 	cache.Set(sql, result, time.Minute)
-}
-
-type DBCacheHelper[T, E any] struct {
-	gen.IGenericsDo[T, E]
-	model   *E
-	keyFunc func(*E) string
-}
-
-func NewCache[T, E any](dao gen.IGenericsDo[T, E]) *DBCacheHelper[T, E] {
-	return &DBCacheHelper[T, E]{
-		IGenericsDo: dao,
-		keyFunc:     func(e *E) string { return strconv.FormatInt(time.Now().Unix(), 10) },
-		model:       new(E),
-	}
-}
-
-func (h *DBCacheHelper[T, E]) WithKeyFunc(keyFunc func(*E) string) *DBCacheHelper[T, E] {
-	h.keyFunc = keyFunc
-	return h
-}
-
-func (h *DBCacheHelper[T, E]) WithModel(model *E) *DBCacheHelper[T, E] {
-	h.model = model
-	return h
-}
-
-func (h *DBCacheHelper[T, E]) Find() ([]E, error) {
-	res, err := h.IGenericsDo.Find()
-
-	// 缓存一下
-	return res, err
-}
-
-func test() {
-	NewCache(query.Q.Administrator.WithContext(nil)).Select().Find()
 }

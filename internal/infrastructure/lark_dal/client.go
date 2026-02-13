@@ -11,6 +11,7 @@ func Client() *lark.Client { // for 外部调用
 	return client
 }
 
-func InitLarkClient(conf config.LarkConfig) {
+func Init() {
+	conf := config.Get().LarkConfig
 	client = lark.NewClient(conf.AppID, conf.AppSecret)
 }

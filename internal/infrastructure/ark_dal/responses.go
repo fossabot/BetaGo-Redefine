@@ -85,6 +85,13 @@ type ModelStreamRespReasoning struct {
 	Reply2Show       *ReplyUnit
 }
 
+type ModelStreamRespReasoningResult struct {
+	ReasoningContent strings.Builder
+	Content          strings.Builder
+	ContentStruct    ContentStruct
+	Reply2Show       *ReplyUnit
+}
+
 func New[T any](chatID, userID string, data *T) *ResponsesImpl[T] {
 	return &ResponsesImpl[T]{
 		meta: tools.FCMeta[T]{

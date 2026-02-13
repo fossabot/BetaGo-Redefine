@@ -5,13 +5,15 @@ import (
 	"errors"
 	"strconv"
 
-	handlerbase "github.com/BetaGoRobot/BetaGo/handler/handler_base"
-	"github.com/BetaGoRobot/BetaGo/utility"
-	"github.com/BetaGoRobot/BetaGo/utility/database"
-	"github.com/BetaGoRobot/BetaGo/utility/larkutils"
-	"github.com/BetaGoRobot/BetaGo/utility/larkutils/templates"
-	"github.com/BetaGoRobot/BetaGo/utility/logs"
-	"github.com/BetaGoRobot/BetaGo/utility/otel"
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/db/model"
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/db/query"
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/lark_dal/larkmsg"
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/lark_dal/larkmsg/larktpl"
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/otel"
+	"github.com/BetaGoRobot/BetaGo-Redefine/pkg/logs"
+	"github.com/BetaGoRobot/BetaGo-Redefine/pkg/utils"
+	"github.com/BetaGoRobot/BetaGo-Redefine/pkg/xhandler"
+
 	"github.com/BetaGoRobot/go_utils/reflecting"
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
@@ -28,7 +30,7 @@ import (
 //	@return error
 //	@author heyuhengmatt
 //	@update 2024-08-06 08:27:09
-func WordAddHandler(ctx context.Context, data *larkim.P2MessageReceiveV1, metaData *handlerbase.BaseMetaData, args ...string) (err error) {
+func WordAddHandler(ctx context.Context, data *larkim.P2MessageReceiveV1, metaData *xhandler.BaseMetaData, args ...string) (err error) {
 	ctx, span := otel.T().Start(ctx, reflecting.GetCurrentFunc())
 	span.SetAttributes(attribute.Key("event").String(larkcore.Prettify(data)))
 	defer span.End()
@@ -50,13 +52,13 @@ func WordAddHandler(ctx context.Context, data *larkim.P2MessageReceiveV1, metaDa
 	}
 
 	ChatID := *data.Event.Message.ChatId
-	return database.GetDbConnection().Debug().Clauses(clause.OnConflict{
+	return query.Q.RepeatWordsRateCustom.WithContext(ctx).Clauses(clause.OnConflict{
 		UpdateAll: true,
-	}).Create(&database.RepeatWordsRateCustom{
+	}).Create(&model.RepeatWordsRateCustom{
 		GuildID: ChatID,
 		Word:    word,
-		Rate:    utility.MustAtoI(rate),
-	}).Error
+		Rate:    int64(utils.MustAtoI(rate)),
+	})
 }
 
 // WordGetHandler to be filled
@@ -67,7 +69,7 @@ func WordAddHandler(ctx context.Context, data *larkim.P2MessageReceiveV1, metaDa
 //	@return error
 //	@author heyuhengmatt
 //	@update 2024-08-06 08:27:07
-func WordGetHandler(ctx context.Context, data *larkim.P2MessageReceiveV1, metaData *handlerbase.BaseMetaData, args ...string) (err error) {
+func WordGetHandler(ctx context.Context, data *larkim.P2MessageReceiveV1, metaData *xhandler.BaseMetaData, args ...string) (err error) {
 	ctx, span := otel.T().Start(ctx, reflecting.GetCurrentFunc())
 	span.SetAttributes(attribute.Key("event").String(larkcore.Prettify(data)))
 	defer span.End()
@@ -77,36 +79,45 @@ func WordGetHandler(ctx context.Context, data *larkim.P2MessageReceiveV1, metaDa
 	ChatID := *data.Event.Message.ChatId
 
 	lines := make([]map[string]string, 0)
-	resListCustom, hitCache := database.FindByCacheFunc(database.RepeatWordsRateCustom{GuildID: ChatID}, func(r database.RepeatWordsRateCustom) string { return r.GuildID })
-	span.SetAttributes(attribute.Key("hitCache").Bool(hitCache))
+	ins := query.Q.RepeatWordsRateCustom
+	resListCustom, err := ins.WithContext(ctx).
+		Where(ins.GuildID.Eq(ChatID)).
+		Find()
+	if err != nil {
+		return err
+	}
 	for _, res := range resListCustom {
 		if res.GuildID == ChatID {
 			lines = append(lines, map[string]string{
 				"title1": "Custom",
 				"title2": res.Word,
-				"title3": strconv.Itoa(res.Rate),
+				"title3": strconv.Itoa(int(res.Rate)),
 			})
 		}
 	}
-	resListGlobal, hitCache := database.FindByCacheFunc(database.RepeatWordsRate{}, func(r database.RepeatWordsRate) string { return "" })
-	span.SetAttributes(attribute.Key("hitCache").Bool(hitCache))
+	ins2 := query.Q.RepeatWordsRate
+	resListGlobal, err := ins2.WithContext(ctx).
+		Find()
+	if err != nil {
+		return err
+	}
 	for _, res := range resListGlobal {
 		lines = append(lines, map[string]string{
 			"title1": "Global",
 			"title2": res.Word,
-			"title3": strconv.Itoa(res.Rate),
+			"title3": strconv.Itoa(int(res.Rate)),
 		})
 	}
-	cardContent := templates.NewCardContent(
+	cardContent := larktpl.NewCardContent(
 		ctx,
-		templates.ThreeColSheetTemplate,
+		larktpl.ThreeColSheetTemplate,
 	).
 		AddVariable("title1", "Scope").
 		AddVariable("title2", "Keyword").
 		AddVariable("title3", "Rate").
 		AddVariable("table_raw_array_1", lines)
 
-	err = larkutils.ReplyCard(ctx, cardContent, *data.Event.Message.MessageId, "_wordGet", false)
+	err = larkmsg.ReplyCard(ctx, cardContent, *data.Event.Message.MessageId, "_wordGet", false)
 	if err != nil {
 		return err
 	}

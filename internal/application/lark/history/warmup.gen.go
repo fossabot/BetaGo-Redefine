@@ -9,9 +9,9 @@ import (
 )
 
 func init() {
-	reflecting.GetFunctionName((*Helper).GetAll)   // from utility/history/msg.go:157
-	reflecting.GetFunctionName((*Helper).GetMsg)   // from utility/history/msg.go:124
-	reflecting.GetFunctionName((*Helper).GetRaw)   // from utility/history/msg.go:137
-	reflecting.GetFunctionName((*Helper).GetTrend) // from utility/history/msg.go:211
-	reflecting.GetFunctionName(HybridSearch)       // from utility/history/search.go:50
+	reflecting.GetFunctionName((*Helper).GetAll)   // from utils/history/msg.go:157
+	reflecting.GetFunctionName((*Helper).GetMsg)   // from utils/history/msg.go:124
+	reflecting.GetFunctionName((*Helper).GetRaw)   // from utils/history/msg.go:137
+	reflecting.GetFunctionName((*Helper).GetTrend) // from utils/history/msg.go:211
+	reflecting.GetFunctionName(HybridSearch)       // from utils/history/search.go:50
 }

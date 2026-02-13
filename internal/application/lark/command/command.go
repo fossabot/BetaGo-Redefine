@@ -1,9 +1,12 @@
 package command
 
 import (
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/application/lark/handlers"
 	"github.com/BetaGoRobot/BetaGo-Redefine/pkg/xcommand"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 )
+
+var larkCommandNilFunc xcommand.CommandFunc[*larkim.P2MessageReceiveV1]
 
 // LarkRootCommand lark root command node
 var LarkRootCommand *xcommand.Command[*larkim.P2MessageReceiveV1]

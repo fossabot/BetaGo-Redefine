@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/config"
@@ -32,7 +33,7 @@ func TestCacheDBRead(t *testing.T) {
 	logs.Init()
 	ctx := context.Background()
 	baseData, err := query.Q.Administrator.WithContext(ctx).Order(query.Administrator.ID.Desc()).Limit(10).Find()
-	if err != nil {
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		panic(err)
 	}
 	PatchConvey(

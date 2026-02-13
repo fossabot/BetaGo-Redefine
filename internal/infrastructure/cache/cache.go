@@ -30,14 +30,14 @@ func GetOrExecute[T any](ctx context.Context, key string, fn func() (T, error)) 
 		return value.(T), nil
 	}
 
-	logs.L().Ctx(ctx).Warn("[❌ Cache MISS] Executing function to get cache value,", zap.String("key", key), zap.String("function", fName))
+	logs.L().Ctx(ctx).Debug("[❌ Cache MISS] Executing function to get cache value,", zap.String("key", key), zap.String("function", fName))
 	value, err = fn()
 	if err != nil {
 		return
 	}
 
 	wrapper.c.Set(key, value, cache.DefaultExpiration)
-	logs.L().Ctx(ctx).Info("📦 Cache SET", zap.String("key", key))
+	logs.L().Ctx(ctx).Debug("📦 Cache SET", zap.String("key", key))
 
 	return
 }

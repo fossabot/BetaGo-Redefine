@@ -277,10 +277,10 @@ func (p *Processor[T, K]) RunParallelStages() error {
 			err = op.Run(p.Context, p.data, p.metaData)
 			if err != nil {
 				if errors.Is(err, xerror.ErrStageSkip) {
-					logs.L().Ctx(p).Info("run stage skipped", zap.Error(err))
+					logs.L().Ctx(p).Info("run stage skipped", zap.String("stage", op.Name()), zap.Error(err))
 				} else {
 					trace.SpanFromContext(p.Context).RecordError(err)
-					logs.L().Ctx(p).Error("run stage error", zap.Error(err))
+					logs.L().Ctx(p).Error("run stage error", zap.String("stage", op.Name()), zap.Error(err), zap.Stack("stack"))
 				}
 				return
 			}

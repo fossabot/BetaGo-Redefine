@@ -4,13 +4,15 @@
 
 package model
 
+import "github.com/lib/pq"
+
 const TableNameCopyWritingCustom = "copy_writing_customs"
 
 // CopyWritingCustom mapped from table <copy_writing_customs>
 type CopyWritingCustom struct {
-	Endpoint string `gorm:"column:endpoint;primaryKey" json:"endpoint"`
-	GuildID  string `gorm:"column:guild_id;primaryKey" json:"guild_id"`
-	Content  string `gorm:"column:content" json:"content"`
+	Endpoint string         `gorm:"column:endpoint;primaryKey" json:"endpoint"`
+	GuildID  string         `gorm:"column:guild_id;primaryKey" json:"guild_id"`
+	Content  pq.StringArray `gorm:"column:content;type:text[]" json:"content"`
 }
 
 // TableName CopyWritingCustom's table name

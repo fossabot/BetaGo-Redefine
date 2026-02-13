@@ -6,11 +6,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/config"
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/lark_dal/larkmsg/larkcontent"
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/lark_dal/larkuser"
 	"github.com/BetaGoRobot/BetaGo-Redefine/pkg/logs"
 	"github.com/BetaGoRobot/BetaGo-Redefine/pkg/utils"
-	"github.com/BetaGoRobot/BetaGo/utility/larkutils/larkconsts"
-	"github.com/BetaGoRobot/BetaGo/utility/larkutils/larkmsgutils"
-	"github.com/BetaGoRobot/BetaGo/utility/larkutils/userutil"
 	"github.com/bytedance/sonic"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 	"go.uber.org/zap"
@@ -35,7 +35,7 @@ func buildLineCommon(
 	timestamp int64,
 ) (line string) {
 	tmpList := make([]string, 0)
-	for msgItem := range larkmsgutils.
+	for msgItem := range larkcontent.
 		GetContentItemsSeq(
 			&larkim.EventMessage{
 				Content:     content,
@@ -69,10 +69,10 @@ func buildLineCommon(
 		}
 	}
 	userName := ""
-	if *senderID == larkconsts.BotAppID {
+	if *senderID == config.Get().LarkConfig.AppID {
 		userName = "机器人"
 	} else {
-		userInfo, err := userutil.GetUserInfoCache(ctx, *chatID, *senderID)
+		userInfo, err := larkuser.GetUserInfoCache(ctx, *chatID, *senderID)
 		if err != nil {
 			logs.L().Ctx(ctx).Error("got error openID", zap.Error(err))
 		}

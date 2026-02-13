@@ -26,7 +26,7 @@ func newCopyWritingGeneral(db *gorm.DB, opts ...gen.DOOption) copyWritingGeneral
 	tableName := _copyWritingGeneral.copyWritingGeneralDo.TableName()
 	_copyWritingGeneral.ALL = field.NewAsterisk(tableName)
 	_copyWritingGeneral.Endpoint = field.NewString(tableName, "endpoint")
-	_copyWritingGeneral.Content = field.NewString(tableName, "content")
+	_copyWritingGeneral.Content = field.NewField(tableName, "content")
 
 	_copyWritingGeneral.fillFieldMap()
 
@@ -38,7 +38,7 @@ type copyWritingGeneral struct {
 
 	ALL      field.Asterisk
 	Endpoint field.String
-	Content  field.String
+	Content  field.Field
 
 	fieldMap map[string]field.Expr
 }
@@ -56,7 +56,7 @@ func (c copyWritingGeneral) As(alias string) *copyWritingGeneral {
 func (c *copyWritingGeneral) updateTableName(table string) *copyWritingGeneral {
 	c.ALL = field.NewAsterisk(table)
 	c.Endpoint = field.NewString(table, "endpoint")
-	c.Content = field.NewString(table, "content")
+	c.Content = field.NewField(table, "content")
 
 	c.fillFieldMap()
 

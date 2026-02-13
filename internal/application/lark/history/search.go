@@ -7,11 +7,11 @@ import (
 	"time"
 
 	"github.com/BetaGoRobot/BetaGo-Redefine/pkg/logs"
-	"github.com/BetaGoRobot/BetaGo/consts"
-	"github.com/BetaGoRobot/BetaGo/utility"
+	"github.com/BetaGoRobot/BetaGo-Redefine/pkg/utils"
 
-	opensearchdal "github.com/BetaGoRobot/BetaGo/utility/opensearch_dal"
-	"github.com/BetaGoRobot/BetaGo/utility/otel"
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/config"
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/opensearch"
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/otel"
 	"github.com/BetaGoRobot/go_utils/reflecting"
 	"github.com/bytedance/gg/gresult"
 	"github.com/bytedance/sonic"
@@ -47,7 +47,7 @@ type EmbeddingFunc func(ctx context.Context, text string) (vector []float32, tok
 
 // HybridSearch 执行混合搜索
 func HybridSearch(ctx context.Context, req HybridSearchRequest, embeddingFunc EmbeddingFunc) (searchResults []*SearchResult, err error) {
-	ctx, span := otel.LarkRobotOtelTracer.Start(ctx, reflecting.GetCurrentFunc())
+	ctx, span := otel.T().Start(ctx, reflecting.GetCurrentFunc())
 	defer span.End()
 	defer func() { span.RecordError(err) }()
 
@@ -136,8 +136,8 @@ func HybridSearch(ctx context.Context, req HybridSearchRequest, embeddingFunc Em
 			},
 		},
 	}
-	span.SetAttributes(attribute.Key("query").String(utility.MustMashal(query)))
-	res, err := opensearchdal.SearchData(ctx, consts.LarkMsgIndex, query)
+	span.SetAttributes(attribute.Key("query").String(utils.MustMarshalString(query)))
+	res, err := opensearch.SearchData(ctx, config.Get().OpensearchConfig.LarkMsgIndex, query)
 	if err != nil {
 		return nil, fmt.Errorf("搜索请求失败: %w", err)
 	}
