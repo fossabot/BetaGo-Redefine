@@ -18,6 +18,7 @@ import (
 	"github.com/BetaGoRobot/BetaGo-Redefine/pkg/utils"
 	"github.com/BetaGoRobot/BetaGo-Redefine/pkg/xhandler"
 	"github.com/BetaGoRobot/BetaGo/consts"
+	"github.com/BetaGoRobot/BetaGo/utility/larkutils"
 	"github.com/BetaGoRobot/go_utils/reflecting"
 	"github.com/kevinmatthe/gojieba"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
@@ -101,7 +102,7 @@ func CollectMessage(ctx context.Context, event *larkim.P2MessageReceiveV1, metaD
 				RawMessageJiebaArray: ws,
 				RawMessageJiebaTag:   wsTags,
 				CreateTime:           utils.Epo2DateZoneMil(utils.MustInt(*event.Event.Message.CreateTime), time.UTC, time.DateTime),
-				CreateTimeV2:         utils.Epo2DateZoneMil(utils.MustInt(*event.Event.Message.CreateTime), utility.UTCPlus8Loc(), time.RFC3339),
+				CreateTimeV2:         utils.Epo2DateZoneMil(utils.MustInt(*event.Event.Message.CreateTime), utils.UTC8Loc(), time.RFC3339),
 				Message:              embedded,
 				UserID:               *event.Event.Sender.SenderId.OpenId,
 				UserName:             userName,
@@ -135,7 +136,7 @@ func init() {
 		OnPanic(larkDeferFunc).
 		WithMetaDataProcess(metaInit).
 		WithPreRun(func(p *xhandler.Processor[larkim.P2MessageReceiveV1, xhandler.BaseMetaData]) {
-			go func() { larkutils.AddTrace2DB(p, *p.Data().Event.Message.MessageId) }()
+			go func() { utils.AddTrace2DB(p, *p.Data().Event.Message.MessageId) }()
 		}).
 		WithDefer(CollectMessage).
 		WithDefer(func(ctx context.Context, event *larkim.P2MessageReceiveV1, meta *xhandler.BaseMetaData) {

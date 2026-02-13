@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/BetaGoRobot/BetaGo-Redefine/pkg/utils"
 	"github.com/BetaGoRobot/BetaGo/utility/log"
 	"github.com/BetaGoRobot/BetaGo/utility/otel"
 	"github.com/BetaGoRobot/go_utils/reflecting"
@@ -27,6 +28,6 @@ func AddReaction(ctx context.Context, reactionType, msgID string) (reactionID st
 		log.Zlog.Error("AddReaction", zaplog.String("Error", resp.Error()))
 		return "", errors.New(resp.Error())
 	}
-	AddReaction2DB(ctx, msgID)
+	utils.AddTrace2DB(ctx, msgID)
 	return *resp.Data.ReactionId, err
 }

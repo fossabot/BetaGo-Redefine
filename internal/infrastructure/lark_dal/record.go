@@ -8,11 +8,12 @@ import (
 	larkchunking "github.com/BetaGoRobot/BetaGo-Redefine/internal/application/lark/chunking"
 	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/ark_dal"
 	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/db/model"
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/lark_dal/msg"
 	"github.com/BetaGoRobot/BetaGo-Redefine/internal/infrastructure/retriver"
+	"github.com/BetaGoRobot/BetaGo-Redefine/internal/xmodel"
 	"github.com/BetaGoRobot/BetaGo-Redefine/pkg/logs"
 	"github.com/BetaGoRobot/BetaGo-Redefine/pkg/utils"
 	"github.com/BetaGoRobot/BetaGo/consts"
-	handlertypes "github.com/BetaGoRobot/BetaGo/handler/handler_types"
 	opensearchdal "github.com/BetaGoRobot/BetaGo/utility/opensearch_dal"
 	"github.com/BetaGoRobot/BetaGo/utility/otel"
 	"github.com/BetaGoRobot/go_utils/reflecting"
@@ -31,9 +32,9 @@ func RecordReplyMessage2Opensearch(ctx context.Context, resp *larkim.ReplyMessag
 	if len(contents) > 0 {
 		content = strings.Join(contents, "\n")
 	} else {
-		content = getContentFromTextMsg(utils.AddrOrNil(resp.Data.Body.Content))
+		content = msg.GetContentFromTextMsg(utils.AddrOrNil(resp.Data.Body.Content))
 	}
-	msgLog := &handlertypes.MessageLog{
+	msgLog := &model.MessageLog{
 		MessageID:   utils.AddrOrNil(resp.Data.MessageId),
 		RootID:      utils.AddrOrNil(resp.Data.RootId),
 		ParentID:    utils.AddrOrNil(resp.Data.ParentId),
@@ -57,13 +58,13 @@ func RecordReplyMessage2Opensearch(ctx context.Context, resp *larkim.ReplyMessag
 	ws := jieba.Cut(content, true)
 
 	err = opensearchdal.InsertData(ctx, consts.LarkMsgIndex, utils.AddrOrNil(resp.Data.MessageId),
-		&model.MessageIndex{
+		&xmodel.MessageIndex{
 			MessageLog:      msgLog,
 			ChatName:        GetChatName(ctx, utils.AddrOrNil(resp.Data.ChatId)),
 			RawMessage:      content,
 			RawMessageJieba: strings.Join(ws, " "),
 			CreateTime:      utils.Epo2DateZoneMil(utils.MustInt(*resp.Data.CreateTime), time.UTC, time.DateTime),
-			CreateTimeV2:    utils.Epo2DateZoneMil(utils.MustInt(*resp.Data.CreateTime), utility.UTCPlus8Loc(), time.RFC3339),
+			CreateTimeV2:    utils.Epo2DateZoneMil(utils.MustInt(*resp.Data.CreateTime), utils.UTC8Loc(), time.RFC3339),
 			Message:         embedded,
 			UserID:          "你",
 			UserName:        "你",
@@ -81,7 +82,7 @@ func RecordReplyMessage2Opensearch(ctx context.Context, resp *larkim.ReplyMessag
 				"chat_id":     utils.AddrOrNil(resp.Data.ChatId),
 				"user_id":     utils.AddrOrNil(resp.Data.Sender.Id),
 				"msg_id":      utils.AddrOrNil(resp.Data.MessageId),
-				"create_time": utility.EpoMil2DateStr(*resp.Data.CreateTime),
+				"create_time": utils.EpoMil2DateStr(*resp.Data.CreateTime),
 				"user_name":   "你",
 			},
 		}},
