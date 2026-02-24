@@ -25,7 +25,7 @@ jobs:
         id: timestamp
         run: echo "timestamp=$(date +%s%3N)" >> $GITHUB_OUTPUT
   Build:
-    needs: prepare
+    needs: Prepare
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
